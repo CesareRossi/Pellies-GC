@@ -16,6 +16,23 @@
     jsonpointer "^5.0.0"
     leven "^3.1.0"
 
+"@azure/msal-browser@^5.7.0":
+  version "5.7.0"
+  resolved "https://registry.yarnpkg.com/@azure/msal-browser/-/msal-browser-5.7.0.tgz#4ca17cd0ae57435d4ee8a23d25a9c453bf05afc5"
+  integrity sha512-uYbJ0YarxkVGWEq814BysJry/IPvpDNkVKmc2bMZp4G+igUQkJ5nlFirycwPGUeA9ICLQqCxqExCA1Z1E07bPA==
+  dependencies:
+    "@azure/msal-common" "16.5.0"
+
+"@azure/msal-common@16.5.0":
+  version "16.5.0"
+  resolved "https://registry.yarnpkg.com/@azure/msal-common/-/msal-common-16.5.0.tgz#ad1b7c41740345db4536f19f2589ba0741a31481"
+  integrity sha512-i3eS/5pmxDbIU/mLMENs88Qg3k6XxqJytJy6PpB7L1tCBjdXHJDadCD3Hu1TyTooe7iQo7CYqbocgL/l/8u90g==
+
+"@azure/msal-react@^5.3.0":
+  version "5.3.0"
+  resolved "https://registry.yarnpkg.com/@azure/msal-react/-/msal-react-5.3.0.tgz#c6f7a9013d73df7b7c4bd85e4e53000322fa70f7"
+  integrity sha512-ewFWRIfgj9ndUQQCF71JdArk+NdgP2yocILXUOgYcySR7fENfgixQgBGA4Rcxrq7qvWfw+yJLac4ky/33npDkA==
+
 "@babel/code-frame@^7.0.0", "@babel/code-frame@^7.10.4", "@babel/code-frame@^7.12.13", "@babel/code-frame@^7.16.0", "@babel/code-frame@^7.27.1", "@babel/code-frame@^7.8.3":
   version "7.27.1"
   resolved "https://registry.yarnpkg.com/@babel/code-frame/-/code-frame-7.27.1.tgz#200f715e66d52a23b221a9435534a91cc13ad5be"

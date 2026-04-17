@@ -1,12 +1,17 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import '@/App.css';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, ChartLine, ArrowsClockwise, User, Target, Flag, Fire, TrendUp, Medal, Golf, CaretDown, UsersThree, Crown, Lightning, MapPin, Users, Gauge, Star } from '@phosphor-icons/react';
+import { Trophy, ChartLine, ArrowsClockwise, User, Target, Flag, Fire, TrendUp, Medal, Golf, CaretDown, UsersThree, Crown, Lightning, MapPin, Users, Gauge, Star, Lock, PencilSimple, Check, X, SignOut, MicrosoftOutlookLogo, CloudArrowUp, DownloadSimple } from '@phosphor-icons/react';
 import * as excelService from './services/excelService';
+import { saveScoresToOneDrive } from './services/oneDriveService';
+import { loginMicrosoft, logoutMicrosoft, getMicrosoftAccount } from './services/msalConfig';
 
 const REFRESH_INTERVAL = 5 * 60 * 1000;
 const PLAYER_STATS_TAB = '__player_stats__';
 const SEASON_OVERVIEW_TAB = '__season_overview__';
+const SCORE_ENTRY_TAB = '__score_entry__';
+const ADMIN_USER = 'admin';
+const ADMIN_PASS = 'Password123!!';
 
 const formatLastUpdated = (ts) => {
   if (!ts) return 'Never';
@@ -59,7 +64,7 @@ const NavDropdown = ({ label, icon, items, activeSheet, onSelect, testId }) => {
 
 // --- Player Card ---
 const PlayerCard = ({ player, index }) => {
-  const totalHoles = player.eagles_plus + player.birdies + player.pars + player.bogeys + player.double_bogeys_plus;
+  const totalHoles = (player.hole_in_ones || 0) + (player.albatross || 0) + player.eagles + player.birdies + player.pars + player.bogeys + player.double_bogeys_plus;
   const getRankColor = (rank) => { if (rank === 1) return 'from-[#D4AF37] to-[#B8860B]'; if (rank === 2) return 'from-[#C0C0C0] to-[#808080]'; if (rank === 3) return 'from-[#CD7F32] to-[#8B4513]'; return 'from-[#A9C5B4] to-[#6B8F7B]'; };
   const getBarWidth = (count) => totalHoles === 0 ? '0%' : `${Math.max((count / totalHoles) * 100, count > 0 ? 4 : 0)}%`;
   return (
@@ -91,7 +96,9 @@ const PlayerCard = ({ player, index }) => {
       <div className="px-5 pb-5">
         <p className="text-xs text-[#A9C5B4] uppercase tracking-[0.15em] mb-3">Scoring Breakdown</p>
         <div className="space-y-2">
-          <ScoringBar label="Eagles+" count={player.eagles_plus} color="bg-[#D4AF37]" width={getBarWidth(player.eagles_plus)} icon={<Fire size={14} weight="fill" />} />
+          {(player.hole_in_ones || 0) > 0 && <ScoringBar label="Hole-in-1" count={player.hole_in_ones} color="bg-fuchsia-400" width={getBarWidth(player.hole_in_ones)} icon={<Star size={14} weight="fill" />} />}
+          {(player.albatross || 0) > 0 && <ScoringBar label="Albatross" count={player.albatross} color="bg-violet-400" width={getBarWidth(player.albatross)} icon={<Crown size={14} weight="fill" />} />}
+          <ScoringBar label="Eagles" count={player.eagles} color="bg-[#D4AF37]" width={getBarWidth(player.eagles)} icon={<Fire size={14} weight="fill" />} />
           <ScoringBar label="Birdies" count={player.birdies} color="bg-emerald-400" width={getBarWidth(player.birdies)} icon={<Flag size={14} weight="fill" />} />
           <ScoringBar label="Pars" count={player.pars} color="bg-sky-400" width={getBarWidth(player.pars)} icon={<Golf size={14} weight="fill" />} />
           <ScoringBar label="Bogeys" count={player.bogeys} color="bg-orange-400" width={getBarWidth(player.bogeys)} icon={<Target size={14} weight="fill" />} />
@@ -138,11 +145,11 @@ const SeasonOverview = ({ data, onNavigate }) => {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }} data-testid="season-overview">
       <div className="text-center mb-10">
         <h2 className="text-3xl sm:text-4xl font-serif text-[#D4AF37] tracking-tight mb-2">Season Overview</h2>
-        <p className="text-[#A9C5B4] text-sm">{data.courses_played.length} of {data.total_courses} courses played &middot; {data.active_players} active players</p>
+        <p className="text-[#A9C5B4] text-sm">{data.total_courses} of {data.total_round_slots} rounds set up &middot; {data.active_players} active players</p>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
         <StatCard icon={<Users size={22} weight="duotone" />} value={data.active_players} label="Active Players" sub={`of ${data.total_players} total`} />
-        <StatCard icon={<MapPin size={22} weight="duotone" />} value={data.courses_played.length} label="Courses Played" sub={data.courses_played.join(', ')} />
+        <StatCard icon={<MapPin size={22} weight="duotone" />} value={`${data.total_courses}/${data.total_round_slots}`} label="Rounds Set Up" sub={data.courses_played.join(', ')} />
         <StatCard icon={<Gauge size={22} weight="duotone" />} value={data.total_rounds_played} label="Rounds Played" sub={`${data.total_holes_played} holes total`} />
         <StatCard icon={<Star size={22} weight="duotone" />} value={data.best_round.score} label="Best Round" sub={`${data.best_round.player} at ${data.best_round.course.replace('Stableford - ', '')}`} />
       </div>
@@ -173,6 +180,8 @@ const SeasonOverview = ({ data, onNavigate }) => {
             <HighlightRow icon={<Star size={20} weight="duotone" className="text-amber-400" />} title="Best Single Round" value={data.best_round.player} detail={`${data.best_round.score} pts at ${data.best_round.course.replace('Stableford - ', '')}`} />
             <HighlightRow icon={<Fire size={20} weight="duotone" className="text-orange-400" />} title="Eagle Leader" value={data.eagle_leader.player || '-'} detail={`${data.eagle_leader.count} eagles`} />
             <HighlightRow icon={<Flag size={20} weight="duotone" className="text-green-400" />} title="Birdie Leader" value={data.birdie_leader.player || '-'} detail={`${data.birdie_leader.count} birdies`} />
+            {data.hio_leader?.count > 0 && <HighlightRow icon={<Star size={20} weight="duotone" className="text-fuchsia-400" />} title="Hole-in-One" value={data.hio_leader.player} detail={`${data.hio_leader.count} HIO`} />}
+            {data.albatross_leader?.count > 0 && <HighlightRow icon={<Crown size={20} weight="duotone" className="text-violet-400" />} title="Albatross Leader" value={data.albatross_leader.player} detail={`${data.albatross_leader.count} albatross`} />}
           </div>
         </div>
       </div>
@@ -207,6 +216,267 @@ const QuickNavCard = ({ icon, title, desc, onClick }) => (
     <p className="text-[#A9C5B4] text-xs mt-0.5">{desc}</p>
   </button>
 );
+
+
+// --- Login Modal ---
+const LoginModal = ({ onLogin, onMsLogin, onClose }) => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [msLoading, setMsLoading] = useState(false);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (username === ADMIN_USER && password === ADMIN_PASS) {
+      localStorage.setItem('pellies_auth', 'true');
+      onLogin();
+    } else {
+      setError('Invalid credentials');
+    }
+  };
+
+  const handleMsLogin = async () => {
+    setMsLoading(true);
+    setError('');
+    try {
+      await onMsLogin();
+    } catch (err) {
+      setError('Microsoft sign-in failed. Try again.');
+    } finally {
+      setMsLoading(false);
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-[#051A10]/80 backdrop-blur-sm" data-testid="login-modal">
+      <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="w-full max-w-sm mx-4 rounded-xl border border-[#D4AF37]/30 bg-[#0F2C1D] p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-serif text-[#D4AF37] flex items-center gap-2"><Lock size={20} weight="duotone" /> Score Entry Login</h2>
+          <button onClick={onClose} className="text-[#A9C5B4] hover:text-white"><X size={20} /></button>
+        </div>
+
+        {/* Microsoft Sign-In (hidden for now — enable later for direct OneDrive sync) */}
+        {/* <button onClick={handleMsLogin} disabled={msLoading} data-testid="login-microsoft"
+          className="w-full py-3 rounded-lg bg-[#2F2F2F] hover:bg-[#404040] text-white font-semibold text-sm flex items-center justify-center gap-2 transition-colors mb-2 disabled:opacity-50">
+          <MicrosoftOutlookLogo size={20} weight="bold" />
+          {msLoading ? 'Signing in...' : 'Sign in with Microsoft'}
+        </button>
+        <p className="text-[10px] text-[#A9C5B4] text-center mb-4">Enables direct save to OneDrive</p>
+
+        <div className="flex items-center gap-3 my-4">
+          <div className="flex-1 h-px bg-[#D4AF37]/20" />
+          <span className="text-xs text-[#A9C5B4]">or</span>
+          <div className="flex-1 h-px bg-[#D4AF37]/20" />
+        </div> */}
+
+        {/* Admin login */}
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input type="text" value={username} onChange={e => setUsername(e.target.value)} data-testid="login-username" className="w-full px-4 py-2.5 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white placeholder-[#A9C5B4]/50 focus:border-[#D4AF37]/50 focus:outline-none text-sm" placeholder="Username" />
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} data-testid="login-password" className="w-full px-4 py-2.5 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white placeholder-[#A9C5B4]/50 focus:border-[#D4AF37]/50 focus:outline-none text-sm" placeholder="Password" />
+          {error && <p className="text-red-400 text-xs">{error}</p>}
+          <button type="submit" data-testid="login-submit" className="w-full py-2.5 rounded-lg bg-[#D4AF37] text-[#051A10] font-bold text-sm hover:bg-[#F1D67E] transition-colors">Sign In</button>
+        </form>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+// --- Score Entry ---
+const ScoreEntry = () => {
+  const [rounds, setRounds] = useState([]);
+  const [selectedRound, setSelectedRound] = useState(null);
+  const [roundInfo, setRoundInfo] = useState(null);
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [scores, setScores] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+  const [loadingRound, setLoadingRound] = useState(false);
+
+  useEffect(() => {
+    const r = excelService.getSetUpRounds();
+    setRounds(r);
+    if (r.length > 0) setSelectedRound(r[0].num);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedRound) return;
+    setLoadingRound(true);
+    excelService.getRoundForScoreEntry(selectedRound).then(info => {
+      setRoundInfo(info);
+      setSelectedPlayer(null);
+      setScores({});
+      setLoadingRound(false);
+    });
+  }, [selectedRound]);
+
+  useEffect(() => {
+    if (roundInfo && selectedPlayer && roundInfo.existingScores[selectedPlayer]) {
+      setScores({ ...roundInfo.existingScores[selectedPlayer] });
+    } else {
+      setScores({});
+    }
+  }, [selectedPlayer, roundInfo]);
+
+  const updateScore = (hole, value) => {
+    const num = value === '' ? '' : parseInt(value);
+    if (value !== '' && (isNaN(num) || num < 0 || num > 20)) return;
+    setScores(prev => ({ ...prev, [hole]: num }));
+  };
+
+  const totalScore = Object.values(scores).reduce((a, b) => (typeof b === 'number' ? a + b : a), 0);
+  const totalPar = roundInfo ? roundInfo.holes.reduce((a, h) => a + h.par, 0) : 0;
+  const filledHoles = Object.values(scores).filter(v => typeof v === 'number' && v > 0).length;
+
+  const handleSave = async () => {
+    if (!selectedPlayer || !selectedRound || filledHoles === 0) return;
+    setSaving(true);
+    setSaveMsg('');
+    try {
+      const msAccount = getMicrosoftAccount();
+      if (msAccount) {
+        // Microsoft auth — write directly to OneDrive
+        const result = await saveScoresToOneDrive(selectedRound, selectedPlayer, scores);
+        setSaveMsg(`Saved to OneDrive (${result.cellsUpdated} holes updated). Click Refresh to see changes.`);
+      } else {
+        // Admin auth — download modified Excel, then user uploads to OneDrive
+        await excelService.saveScoresToExcel(selectedRound, selectedPlayer, scores);
+        setSaveMsg(`Excel downloaded. Upload to your OneDrive to update the league data.`);
+      }
+    } catch (err) {
+      console.error('Save error:', err);
+      setSaveMsg('Error: ' + err.message);
+    } finally {
+      setSaving(false);
+      setTimeout(() => setSaveMsg(''), 8000);
+    }
+  };
+
+  const msAccount = getMicrosoftAccount();
+
+  if (loadingRound) {
+    return <div className="text-center py-20 text-[#D4AF37]">Loading round data...</div>;
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} data-testid="score-entry">
+      <div className="text-center mb-8">
+        <h2 className="text-3xl sm:text-4xl font-serif text-[#D4AF37] tracking-tight mb-2">Score Entry</h2>
+        <p className="text-[#A9C5B4] text-sm">Enter scores for each round</p>
+      </div>
+
+      {/* Round + Player Selectors */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 max-w-2xl mx-auto">
+        <div>
+          <label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Select Round</label>
+          <select value={selectedRound || ''} onChange={e => setSelectedRound(e.target.value)} data-testid="score-round-select" className="w-full px-4 py-3 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white focus:border-[#D4AF37]/50 focus:outline-none text-sm appearance-none cursor-pointer">
+            {rounds.map(r => <option key={r.num} value={r.num}>{r.courseName} (Round {r.num})</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Select Player</label>
+          <select value={selectedPlayer || ''} onChange={e => setSelectedPlayer(e.target.value)} data-testid="score-player-select" className="w-full px-4 py-3 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white focus:border-[#D4AF37]/50 focus:outline-none text-sm appearance-none cursor-pointer">
+            <option value="">Choose a player...</option>
+            {roundInfo?.players.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Course Info */}
+      {roundInfo && (
+        <div className="flex flex-wrap justify-center gap-4 mb-8 text-xs text-[#A9C5B4]">
+          <span>Course: <strong className="text-white">{roundInfo.courseName}</strong></span>
+          <span>Par: <strong className="text-white">{roundInfo.coursePar}</strong></span>
+          <span>Rating: <strong className="text-white">{roundInfo.courseRating}</strong></span>
+          <span>Slope: <strong className="text-white">{roundInfo.slopeRating}</strong></span>
+        </div>
+      )}
+
+      {/* Scorecard Grid */}
+      {selectedPlayer && roundInfo && (
+        <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md overflow-hidden shadow-2xl max-w-3xl mx-auto">
+          <div className="p-4 border-b border-[#D4AF37]/10 flex items-center justify-between">
+            <h3 className="text-sm font-sans text-white"><span className="text-[#D4AF37] font-bold">{selectedPlayer}</span> — {roundInfo.courseName}</h3>
+            <div className="text-xs text-[#A9C5B4]">
+              {filledHoles}/{roundInfo.holes.length} holes &middot; Total: <span className={`font-bold ${totalScore - totalPar < 0 ? 'text-emerald-400' : totalScore - totalPar > 0 ? 'text-orange-400' : 'text-white'}`}>{totalScore > 0 ? totalScore : '-'}</span>
+              {totalScore > 0 && <span className="ml-1">({totalScore - totalPar >= 0 ? '+' : ''}{totalScore - totalPar})</span>}
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            {/* Front 9 */}
+            <div className="p-4">
+              <p className="text-xs text-[#A9C5B4] uppercase tracking-wider mb-3">Front 9</p>
+              <div className="grid grid-cols-9 gap-2">
+                {roundInfo.holes.slice(0, 9).map(h => (
+                  <div key={h.hole} className="text-center">
+                    <div className="text-[10px] text-[#A9C5B4] mb-1">H{h.hole}</div>
+                    <div className="text-[10px] text-[#D4AF37]/60 mb-1">P{h.par}</div>
+                    <input
+                      type="number" min="1" max="15" value={scores[h.hole] ?? ''}
+                      onChange={e => updateScore(h.hole, e.target.value)}
+                      data-testid={`score-hole-${h.hole}`}
+                      className={`w-full h-10 text-center rounded-lg border text-sm font-bold focus:outline-none focus:ring-1 focus:ring-[#D4AF37] transition-colors ${
+                        scores[h.hole] != null && scores[h.hole] !== ''
+                          ? scores[h.hole] < h.par ? 'bg-emerald-900/40 border-emerald-500/40 text-emerald-300'
+                          : scores[h.hole] === h.par ? 'bg-[#051A10] border-[#D4AF37]/30 text-white'
+                          : 'bg-orange-900/30 border-orange-500/40 text-orange-300'
+                          : 'bg-[#051A10] border-[#D4AF37]/15 text-white'
+                      }`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Back 9 */}
+            {roundInfo.holes.length > 9 && (
+              <div className="p-4 pt-0">
+                <p className="text-xs text-[#A9C5B4] uppercase tracking-wider mb-3">Back 9</p>
+                <div className="grid grid-cols-9 gap-2">
+                  {roundInfo.holes.slice(9, 18).map(h => (
+                    <div key={h.hole} className="text-center">
+                      <div className="text-[10px] text-[#A9C5B4] mb-1">H{h.hole}</div>
+                      <div className="text-[10px] text-[#D4AF37]/60 mb-1">P{h.par}</div>
+                      <input
+                        type="number" min="1" max="15" value={scores[h.hole] ?? ''}
+                        onChange={e => updateScore(h.hole, e.target.value)}
+                        data-testid={`score-hole-${h.hole}`}
+                        className={`w-full h-10 text-center rounded-lg border text-sm font-bold focus:outline-none focus:ring-1 focus:ring-[#D4AF37] transition-colors ${
+                          scores[h.hole] != null && scores[h.hole] !== ''
+                            ? scores[h.hole] < h.par ? 'bg-emerald-900/40 border-emerald-500/40 text-emerald-300'
+                            : scores[h.hole] === h.par ? 'bg-[#051A10] border-[#D4AF37]/30 text-white'
+                            : 'bg-orange-900/30 border-orange-500/40 text-orange-300'
+                            : 'bg-[#051A10] border-[#D4AF37]/15 text-white'
+                        }`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Save Button */}
+          <div className="p-4 border-t border-[#D4AF37]/10 flex items-center justify-between">
+            <div>
+              {saveMsg && <p className={`text-xs ${saveMsg.includes('Error') ? 'text-red-400' : 'text-emerald-400'}`}>{saveMsg}</p>}
+            </div>
+            <button onClick={handleSave} disabled={saving || filledHoles === 0} data-testid="score-save-btn"
+              className="flex items-center gap-2 px-6 py-2.5 bg-[#D4AF37] text-[#051A10] font-bold text-sm rounded-lg hover:bg-[#F1D67E] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              {msAccount ? <CloudArrowUp size={16} weight="bold" /> : <DownloadSimple size={16} weight="bold" />}
+              {saving ? 'Saving...' : msAccount ? 'Save to OneDrive' : 'Save & Download'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!selectedPlayer && roundInfo && (
+        <div className="text-center py-12 text-[#A9C5B4]">Select a player above to start entering scores</div>
+      )}
+    </motion.div>
+  );
+};
+
 
 // --- Main App ---
 function App() {
@@ -246,6 +516,9 @@ function App() {
         setPlayerStats(data.players);
         setLastUpdated(data.last_updated);
         setSheetData(null); setSeasonOverview(null);
+      } else if (sheetName === SCORE_ENTRY_TAB) {
+        setLoading(false);
+        return; // Score entry manages its own data
       } else {
         const data = await excelService.getSheetData(sheetName);
         setSheetData(data.sheet);
@@ -289,21 +562,27 @@ function App() {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead><tr className="bg-[#0A2A1A] border-b border-[#D4AF37]/30">
-              {headers.map((h, i) => <th key={i} data-testid={`table-header-${h.toLowerCase().replace(/\s+/g, '-')}`} className="py-4 px-6 text-left text-xs font-sans tracking-[0.2em] uppercase text-[#A9C5B4]">{h}</th>)}
+              {headers.map((h, i) => {
+                const isNameCol = h.toLowerCase() === 'player' || h.toLowerCase() === 'team';
+                return <th key={i} data-testid={`table-header-${h.toLowerCase().replace(/\s+/g, '-')}`} className={`py-4 px-4 text-xs font-sans tracking-[0.15em] uppercase text-[#A9C5B4] ${isNameCol ? 'text-left' : 'text-center'}`}>{h}</th>;
+              })}
             </tr></thead>
             <tbody>
               {sheetData.data.map((row, ri) => {
                 const rb = getRankBadge(row);
                 return (
                   <tr key={ri} data-testid={`table-row-${ri}`} className={`${ri % 2 === 0 ? 'bg-transparent' : 'bg-[#FFFFFF]/5'} hover:bg-[#163A27] transition-colors duration-200 ${rb ? 'border-l-2 border-[#D4AF37]' : ''}`}>
-                    {Object.entries(row).map(([k, v], ci) => (
-                      <td key={ci} data-testid={`table-cell-${ri}-${ci}`} className="py-4 px-6 align-middle text-sm sm:text-base font-sans text-white">
-                        <div className="flex items-center gap-2">
+                    {Object.entries(row).map(([k, v], ci) => {
+                      const isNameCol = k.toLowerCase() === 'player' || k.toLowerCase() === 'team';
+                      return (
+                      <td key={ci} data-testid={`table-cell-${ri}-${ci}`} className={`py-3 px-4 align-middle text-sm sm:text-base font-sans text-white ${isNameCol ? 'text-left' : 'text-center'}`}>
+                        <div className={`flex items-center gap-2 ${isNameCol ? '' : 'justify-center'}`}>
                           {ci === 0 && rb && <span className="inline-flex items-center justify-center rounded-full bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/40 px-3 py-1 text-xs font-bold shadow-[0_0_10px_rgba(212,175,55,0.2)]" data-testid={`rank-badge-${rb}`}>#{rb}</span>}
                           <span>{String(v)}</span>
                         </div>
                       </td>
-                    ))}
+                      );
+                    })}
                   </tr>
                 );
               })}
@@ -316,6 +595,32 @@ function App() {
 
   const isPlayerStats = activeSheet === PLAYER_STATS_TAB;
   const isOverview = activeSheet === SEASON_OVERVIEW_TAB;
+  const isScoreEntry = activeSheet === SCORE_ENTRY_TAB;
+  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('pellies_auth') === 'true' || getMicrosoftAccount() !== null);
+  const [showLogin, setShowLogin] = useState(false);
+
+  const handleScoreEntryClick = () => {
+    if (isLoggedIn || getMicrosoftAccount()) { setActiveSheet(SCORE_ENTRY_TAB); }
+    else { setShowLogin(true); }
+  };
+  const handleLoginSuccess = () => { setIsLoggedIn(true); setShowLogin(false); setActiveSheet(SCORE_ENTRY_TAB); };
+  const handleMsLoginSuccess = async () => {
+    try {
+      await loginMicrosoft();
+      setIsLoggedIn(true);
+      setShowLogin(false);
+      setActiveSheet(SCORE_ENTRY_TAB);
+    } catch (err) {
+      throw err;
+    }
+  };
+  const handleLogout = () => {
+    localStorage.removeItem('pellies_auth');
+    const msAcc = getMicrosoftAccount();
+    if (msAcc) logoutMicrosoft();
+    setIsLoggedIn(false);
+    if (isScoreEntry) setActiveSheet(SEASON_OVERVIEW_TAB);
+  };
 
   return (
     <div className="min-h-screen bg-[#051A10] relative overflow-hidden">
@@ -347,16 +652,29 @@ function App() {
               <button onClick={() => setActiveSheet(PLAYER_STATS_TAB)} data-testid="nav-player-stats" className={`flex items-center gap-2 px-5 py-3 text-sm font-sans transition-all duration-200 rounded-lg whitespace-nowrap ${isPlayerStats ? 'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30' : 'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`}>
                 <User size={18} weight="duotone" /><span>Player Stats</span>
               </button>
+              {/* Score Entry hidden for now — uncomment to enable
+              <button onClick={handleScoreEntryClick} data-testid="nav-score-entry" className={`flex items-center gap-2 px-5 py-3 text-sm font-sans transition-all duration-200 rounded-lg whitespace-nowrap ${isScoreEntry ? 'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30' : 'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`}>
+                <PencilSimple size={18} weight="duotone" /><span>Score Entry</span>
+              </button>
+              */}
+              {isLoggedIn && (
+                <button onClick={handleLogout} data-testid="nav-logout" className="flex items-center gap-1 px-3 py-3 text-xs font-sans text-[#A9C5B4] hover:text-red-400 transition-colors ml-auto" title="Sign Out">
+                  <SignOut size={16} weight="duotone" />
+                  <span className="hidden sm:inline">{getMicrosoftAccount() ? getMicrosoftAccount().name || 'Microsoft' : 'Sign Out'}</span>
+                </button>
+              )}
             </nav>
           </div>
         </header>
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           {error && <div className="mb-6 px-4 py-3 rounded-lg bg-red-900/30 border border-red-500/30 text-red-300 text-sm" data-testid="error-banner">{error}</div>}
           <AnimatePresence mode="wait">
-            {loading ? (
+            {loading && !isScoreEntry ? (
               <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-center py-20">
                 <div className="text-[#D4AF37] text-lg">Loading...</div>
               </motion.div>
+            ) : isScoreEntry ? (
+              <ScoreEntry />
             ) : isOverview && seasonOverview ? (
               <SeasonOverview data={seasonOverview} onNavigate={setActiveSheet} />
             ) : isPlayerStats && playerStats ? (
@@ -375,6 +693,10 @@ function App() {
           </AnimatePresence>
         </main>
       </div>
+      {/* Login Modal */}
+      <AnimatePresence>
+        {showLogin && <LoginModal onLogin={handleLoginSuccess} onMsLogin={handleMsLoginSuccess} onClose={() => setShowLogin(false)} />}
+      </AnimatePresence>
     </div>
   );
 }
