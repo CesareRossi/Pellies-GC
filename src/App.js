@@ -302,6 +302,8 @@ function App() {
   // Auth
   useEffect(() => {
     let mounted = true;
+    // onAuthChange fires synchronously on subscribe with INITIAL_SESSION,
+    // so we don't need a separate getSession() call (which caused a race).
     const { data: { subscription } } = db.onAuthChange(async (event, session) => {
       if (!mounted) return;
       setUser(session?.user || null);
@@ -310,24 +312,12 @@ function App() {
           const p = await db.getUserProfile();
           if (mounted) setProfile(p);
         } catch (e) { console.error('Profile fetch error:', e); }
-      } else { setProfile(null); }
-    });
-    // Initial check
-    db.getSession().then(async (s) => {
-      if (!mounted) return;
-      setUser(s?.user || null);
-      if (s?.user) {
-        try {
-          const p = await db.getUserProfile();
-          if (mounted) setProfile(p);
-        } catch (e) { console.error('Profile fetch error:', e); }
+      } else {
+        setProfile(null);
       }
     });
     return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
-
-  // Load initial data
-  useEffect(() => { loadData(); }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -335,6 +325,9 @@ function App() {
       setRounds(r); setPlayers(p);
     } catch(err) { console.error(err); }
   }, []);
+
+  // Load initial data
+  useEffect(() => { loadData(); }, [loadData]);
 
   const loadView = useCallback(async (v, param) => {
     setLoading(true);
@@ -357,7 +350,6 @@ function App() {
   const handleRefresh = async () => { setRefreshing(true); await loadData(); await loadView(view, viewParam); setRefreshing(false); };
 
   const isAdmin = profile?.role === 'admin';
-  const canEdit = profile?.role === 'admin' || profile?.role === 'approved';
   const canScore = !!user; // Any logged-in user can enter scores
 
   const stabItems = rounds.map(r=>({id: r.id, label: `Stableford - ${r.courses?.name||`Round ${r.round_number}`}`}));

@@ -28,23 +28,33 @@ export async function getSession() {
   return data.session;
 }
 
+// Dedupe concurrent profile fetches to avoid supabase-js body-stream race
+let _profilePromise = null;
 export async function getUserProfile() {
-  const session = await getSession();
-  if (!session) return null;
-  const { data, error } = await supabase.from('user_profiles').select('*').eq('id', session.user.id).maybeSingle();
-  if (error) return null;
-  // If no profile row exists yet (trigger may not have fired), create one now
-  if (!data) {
-    const displayName = session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || '';
-    const { data: created, error: createErr } = await supabase
-      .from('user_profiles')
-      .upsert({ id: session.user.id, email: session.user.email, display_name: displayName, role: 'pending' }, { onConflict: 'id' })
-      .select()
-      .maybeSingle();
-    if (createErr) return null;
-    return created;
-  }
-  return data;
+  if (_profilePromise) return _profilePromise;
+  _profilePromise = (async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return null;
+      const { data, error } = await supabase.from('user_profiles').select('*').eq('id', session.user.id).maybeSingle();
+      if (error) return null;
+      if (!data) {
+        const displayName = session.user.user_metadata?.display_name || session.user.email?.split('@')[0] || '';
+        const { data: created, error: createErr } = await supabase
+          .from('user_profiles')
+          .upsert({ id: session.user.id, email: session.user.email, display_name: displayName, role: 'pending' }, { onConflict: 'id' })
+          .select()
+          .maybeSingle();
+        if (createErr) return null;
+        return created;
+      }
+      return data;
+    } finally {
+      // Allow future calls after this one resolves
+      setTimeout(() => { _profilePromise = null; }, 50);
+    }
+  })();
+  return _profilePromise;
 }
 
 export function onAuthChange(callback) {
@@ -206,22 +216,24 @@ function calcStablefordPoints(strokes, par, handicapStrokes) {
 }
 
 function distributeHandicapStrokes(courseHandicap, holes) {
-  // Distribute strokes based on stroke index (SI)
-  // A player with CH=18 gets 1 stroke on every hole
-  // CH=36 gets 2 strokes on every hole, etc.
   const strokesPerHole = {};
+  // Guard: if no holes configured, return empty map (prevents infinite loop)
+  if (!holes || holes.length === 0 || !courseHandicap) {
+    for (const h of holes || []) strokesPerHole[h.hole_number] = 0;
+    return strokesPerHole;
+  }
   const sortedBySI = [...holes].sort((a, b) => (a.stroke_index || 99) - (b.stroke_index || 99));
 
   let remaining = Math.abs(courseHandicap);
   const isPlus = courseHandicap < 0; // Plus handicap (gives back strokes)
 
-  // First pass: 1 stroke per hole by SI order
   for (const hole of sortedBySI) {
     strokesPerHole[hole.hole_number] = 0;
   }
 
   let pass = 0;
-  while (remaining > 0) {
+  const MAX_PASSES = 10; // Safety guard (10 strokes per hole is already extreme)
+  while (remaining > 0 && pass < MAX_PASSES) {
     for (const hole of sortedBySI) {
       if (remaining <= 0) break;
       strokesPerHole[hole.hole_number] = pass + 1;
