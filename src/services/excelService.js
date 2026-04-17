@@ -95,8 +95,9 @@ function parseRoundSheet(ws) {
 
 // --- Core: Fetch & Parse ---
 async function fetchAndParse() {
-  // const PROXY_URL = `${process.env.REACT_APP_BACKEND_URL}/api/excel-proxy`;
-  const PROXY_URL = `/api/excel-proxy`;
+  // Use relative URL for Vercel, or REACT_APP_BACKEND_URL for Emergent
+  const backendUrl = process.env.REACT_APP_BACKEND_URL;
+  const PROXY_URL = backendUrl ? `${backendUrl}/api/excel-proxy` : `/api/excel-proxy`;
 
   const response = await fetch(PROXY_URL);
   if (!response.ok) throw new Error(`Proxy fetch failed: ${response.status}`);
