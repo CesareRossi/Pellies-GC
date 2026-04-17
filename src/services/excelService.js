@@ -124,7 +124,13 @@ function parseRoundSheet(ws) {
 async function fetchAndParse() {
   const backendUrl = process.env.REACT_APP_BACKEND_URL;
   const PROXY_URL = backendUrl ? `${backendUrl}/api/excel-proxy` : `/api/excel-proxy`;
-  const response = await fetch(PROXY_URL);
+  const response = await fetch(`${PROXY_URL}?t=${Date.now()}`, {
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    },
+  });
   if (!response.ok) throw new Error(`Proxy fetch failed: ${response.status}`);
   const arrayBuffer = await response.arrayBuffer();
   const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
@@ -467,7 +473,13 @@ export async function saveScoresToExcel(roundNum, player, scores) {
   // Work on a copy so we don't mutate the cache
   const backendUrl = process.env.REACT_APP_BACKEND_URL;
   const PROXY_URL = backendUrl ? `${backendUrl}/api/excel-proxy` : `/api/excel-proxy`;
-  const response = await fetch(PROXY_URL);
+  const response = await fetch(`${PROXY_URL}?t=${Date.now()}`, {
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    },
+  });
   if (!response.ok) throw new Error('Failed to fetch Excel');
   const arrayBuffer = await response.arrayBuffer();
   const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });

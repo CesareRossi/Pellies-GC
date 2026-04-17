@@ -119,7 +119,11 @@ module.exports = async (req, res) => {
     }
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Cache-Control', 'public, max-age=300');
+    // Always serve fresh workbook data (no edge/browser caching).
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
     return res.status(200).send(buffer);
   } catch (err) {
     console.error('Excel proxy error:', err);
