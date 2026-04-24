@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { ArrowRight, ArrowLeft, Check, Plus, Trash, Flag, MapPin, UsersThree, Golf } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
 
-const steps = ['Welcome', 'Players', 'Courses', 'Rounds & Holes', 'Teams', 'Complete'];
+const steps = ['Welcome', 'Players', 'Courses', 'Rounds', 'Teams', 'Complete'];
 
 const Field = ({ label, type = 'text', value, onChange, placeholder }) => (
   <div>
@@ -19,36 +19,30 @@ export default function SeasonWizard({ onComplete }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
 
-  // Data
   const [players, setPlayers] = useState([]);
   const [newPlayer, setNewPlayer] = useState({ name: '', handicap: null });
   const [courses, setCourses] = useState([]);
   const [newCourse, setNewCourse] = useState({ name: '', par: 72, rating: null, slope: null });
   const [rounds, setRounds] = useState([]);
-  const [editingHoles, setEditingHoles] = useState(null); // round index
+  const [editingCourseHoles, setEditingCourseHoles] = useState(null); // course id
+  const [courseHolesDraft, setCourseHolesDraft] = useState([]);
   const [teams, setTeams] = useState([]);
   const [newTeam, setNewTeam] = useState({ player1: '', player2: '' });
 
-  // Load existing data
   useEffect(() => {
     db.getPlayers().then(setPlayers).catch(() => {});
-    db.getCourses().then(setCourses).catch(() => {});
-    db.getRounds().then(r => {
-      // Load holes for each round
-      Promise.all(r.filter(rd => rd.is_setup).map(async rd => {
-        const holes = await db.getRoundHoles(rd.id);
-        return { ...rd, holes };
-      })).then(withHoles => setRounds(r.map(rd => {
-        const wh = withHoles.find(w => w.id === rd.id);
-        return wh || rd;
-      })));
-    }).catch(() => {});
+    db.getCourses(true).then(setCourses).catch(() => {});
+    db.getRounds().then(setRounds).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (step === 4) db.getAllTeams().then(setTeams).catch(() => {});
+  }, [step]);
 
   const next = () => setStep(s => Math.min(s + 1, steps.length - 1));
   const prev = () => setStep(s => Math.max(s - 1, 0));
 
-  // === ADD PLAYER ===
+  // === PLAYERS ===
   const addPlayer = async () => {
     if (!newPlayer.name.trim()) return;
     setSaving(true); setMsg('');
@@ -60,7 +54,7 @@ export default function SeasonWizard({ onComplete }) {
     finally { setSaving(false); }
   };
 
-  // === ADD COURSE ===
+  // === COURSES ===
   const addCourse = async () => {
     if (!newCourse.name.trim()) return;
     setSaving(true); setMsg('');
@@ -72,7 +66,43 @@ export default function SeasonWizard({ onComplete }) {
     finally { setSaving(false); }
   };
 
-  // === ADD ROUND ===
+  const openCourseHoles = async (courseId) => {
+    setEditingCourseHoles(courseId);
+    setMsg('');
+    try {
+      const existing = await db.getCourseHoles(courseId);
+      if (existing.length > 0) {
+        setCourseHolesDraft(existing.map(h => ({ hole_number: h.hole_number, par: h.par, stroke_index: h.stroke_index })));
+      } else {
+        setCourseHolesDraft(Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, par: 4, stroke_index: i + 1 })));
+      }
+    } catch {
+      setCourseHolesDraft(Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, par: 4, stroke_index: i + 1 })));
+    }
+  };
+
+  const updateCourseHole = (idx, field, value) => {
+    setCourseHolesDraft(prev => prev.map((h, i) => i === idx ? { ...h, [field]: parseInt(value) || 0 } : h));
+  };
+
+  const saveCourseHoles = async () => {
+    if (!editingCourseHoles) return;
+    setSaving(true); setMsg('');
+    try {
+      const rows = courseHolesDraft.map(h => ({ course_id: editingCourseHoles, hole_number: h.hole_number, par: h.par, stroke_index: h.stroke_index }));
+      await db.upsertCourseHoles(rows);
+      setMsg('Course holes saved!'); setTimeout(() => setMsg(''), 3000);
+    } catch (e) { setMsg(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const toggleCourseActive = async (c) => {
+    try { await db.setCourseActive(c.id, !c.is_active); setCourses(await db.getCourses(true)); }
+    catch (e) { setMsg(e.message); }
+  };
+
+  // === ROUNDS ===
+  // v5: a round inherits its holes from the selected course — no per-round holes needed
   const addRound = async (courseId) => {
     if (!courseId) return;
     setSaving(true); setMsg('');
@@ -80,53 +110,27 @@ export default function SeasonWizard({ onComplete }) {
       const existingRounds = await db.getRounds();
       const nextNum = existingRounds.length > 0 ? Math.max(...existingRounds.map(r => r.round_number)) + 1 : 1;
       const r = await db.createRound({ round_number: nextNum, course_id: parseInt(courseId), is_setup: true });
-      // Create default 18 holes
-      const defaultHoles = Array.from({ length: 18 }, (_, i) => ({
-        round_id: r.id, hole_number: i + 1, par: 4, stroke_index: i + 1
-      }));
-      await db.upsertRoundHoles(defaultHoles);
-      const fullRound = { ...r, courses: courses.find(c => c.id === parseInt(courseId)), holes: defaultHoles };
+      const fullRound = { ...r, courses: courses.find(c => c.id === parseInt(courseId)) };
       setRounds(prev => [...prev, fullRound]);
     } catch (e) { setMsg(e.message); }
     finally { setSaving(false); }
   };
 
-  const updateHole = (roundIdx, holeIdx, field, value) => {
-    setRounds(prev => prev.map((r, ri) => {
-      if (ri !== roundIdx || !r.holes) return r;
-      return { ...r, holes: r.holes.map((h, hi) => hi === holeIdx ? { ...h, [field]: parseInt(value) || 0 } : h) };
-    }));
-  };
-
-  const saveHoles = async (roundIdx) => {
-    const r = rounds[roundIdx];
-    if (!r.holes) return;
+  // === TEAMS (season-wide) ===
+  const addTeam = async () => {
+    if (!newTeam.player1 || !newTeam.player2) return;
     setSaving(true); setMsg('');
     try {
-      await db.upsertRoundHoles(r.holes.map(h => ({ round_id: r.id, hole_number: h.hole_number, par: h.par, stroke_index: h.stroke_index })));
-      setMsg('Holes saved!'); setTimeout(() => setMsg(''), 3000);
-    } catch (e) { setMsg(e.message); }
-    finally { setSaving(false); }
-  };
-
-  // === ADD TEAM ===
-  const addTeam = async (roundId) => {
-    if (!newTeam.player1 || !newTeam.player2 || !roundId) return;
-    setSaving(true); setMsg('');
-    try {
-      await db.createTeam({ round_id: parseInt(roundId), player1_id: parseInt(newTeam.player1), player2_id: parseInt(newTeam.player2) });
-      const allTeams = await db.getAllTeams();
-      setTeams(allTeams);
+      await db.createTeam({ player1_id: parseInt(newTeam.player1), player2_id: parseInt(newTeam.player2) });
+      setTeams(await db.getAllTeams());
       setNewTeam({ player1: '', player2: '' });
     } catch (e) { setMsg(e.message); }
     finally { setSaving(false); }
   };
 
-  useEffect(() => {
-    if (step === 4) db.getAllTeams().then(setTeams).catch(() => {});
-  }, [step]);
-
   const setupRounds = rounds.filter(r => r.is_setup);
+  const seasonTeams = teams.filter(t => !t.round_id);
+  const activeCourses = courses.filter(c => c.is_active);
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-3xl mx-auto">
@@ -144,7 +148,7 @@ export default function SeasonWizard({ onComplete }) {
       <p className="text-center text-xs text-[#A9C5B4] uppercase tracking-wider mb-6">{steps[step]}</p>
 
       <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md p-6 shadow-2xl">
-        {msg && <div className={`mb-4 text-xs ${msg.includes('Error') || msg.includes('error') ? 'text-red-400' : 'text-emerald-400'}`}>{msg}</div>}
+        {msg && <div className={`mb-4 text-xs ${msg.toLowerCase().includes('error') ? 'text-red-400' : 'text-emerald-400'}`}>{msg}</div>}
 
         {/* STEP 0: Welcome */}
         {step === 0 && (
@@ -152,9 +156,9 @@ export default function SeasonWizard({ onComplete }) {
             <Golf size={48} weight="duotone" className="text-[#D4AF37] mx-auto mb-4" />
             <h2 className="text-2xl font-serif text-[#D4AF37] mb-3">Season Setup Wizard</h2>
             <p className="text-[#A9C5B4] text-sm max-w-md mx-auto mb-6">
-              Set up your golf league season step by step. Add players, courses, rounds with hole configurations, and team pairings.
+              Set up your league: add players, courses (with hole par &amp; SI), rounds, and season-wide team pairings.
             </p>
-            <p className="text-[#A9C5B4]/70 text-xs">You already have {players.length} players, {courses.length} courses, and {setupRounds.length} rounds configured.</p>
+            <p className="text-[#A9C5B4]/70 text-xs">Currently configured: {players.length} players &middot; {activeCourses.length} active courses &middot; {setupRounds.length} rounds &middot; {seasonTeams.length} teams</p>
           </div>
         )}
 
@@ -181,15 +185,49 @@ export default function SeasonWizard({ onComplete }) {
           </div>
         )}
 
-        {/* STEP 2: Courses */}
+        {/* STEP 2: Courses + Course Holes */}
         {step === 2 && (
           <div>
             <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider mb-4 flex items-center gap-2"><MapPin size={16} className="text-[#D4AF37]" /> Courses ({courses.length})</h3>
             <div className="space-y-2 mb-4">
               {courses.map(c => (
-                <div key={c.id} className="py-2 px-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10 text-sm">
-                  <span className="text-white font-semibold">{c.name}</span>
-                  <span className="text-[#A9C5B4] text-xs ml-2">Par {c.par} &middot; Rating {c.rating} &middot; Slope {c.slope}</span>
+                <div key={c.id} className={`rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10 overflow-hidden ${!c.is_active ? 'opacity-50' : ''}`}>
+                  <div className="flex items-center justify-between py-2 px-3 gap-2">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-white font-semibold text-sm">{c.name}</span>
+                      {!c.is_active && <span className="ml-2 text-[10px] uppercase tracking-wider text-amber-400">(disabled)</span>}
+                      <p className="text-[#A9C5B4] text-xs">Par {c.par} &middot; Rating {c.rating} &middot; Slope {c.slope}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button onClick={() => openCourseHoles(editingCourseHoles === c.id ? null : c.id)} className="text-xs text-[#D4AF37] border border-[#D4AF37]/30 px-2 py-1 rounded hover:bg-[#D4AF37]/10">{editingCourseHoles === c.id ? 'Close' : 'Holes'}</button>
+                      <button onClick={() => toggleCourseActive(c)} className="text-xs text-[#A9C5B4] hover:text-amber-400 border border-transparent hover:border-amber-500/30 px-2 py-1 rounded">{c.is_active ? 'Disable' : 'Enable'}</button>
+                    </div>
+                  </div>
+                  {editingCourseHoles === c.id && (
+                    <div className="px-3 pb-3 border-t border-[#D4AF37]/10">
+                      <p className="text-[11px] text-[#A9C5B4]/70 italic py-2">Par &amp; SI per hole — used by every round played on this course.</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
+                        {[0, 9].map(offset => (
+                          <div key={offset} className="space-y-1">
+                            <div className="grid grid-cols-[30px_1fr_1fr] gap-1 text-[10px] text-[#A9C5B4]/70 uppercase tracking-wider px-1 pb-1 border-b border-[#D4AF37]/10">
+                              <span className="text-center">#</span><span className="text-center">Par</span><span className="text-center">SI</span>
+                            </div>
+                            {courseHolesDraft.slice(offset, offset + 9).map((h) => {
+                              const i = courseHolesDraft.findIndex(x => x.hole_number === h.hole_number);
+                              return (
+                                <div key={h.hole_number} className="grid grid-cols-[30px_1fr_1fr] gap-1 items-center">
+                                  <span className="text-[#D4AF37] text-xs font-bold text-center">{h.hole_number}</span>
+                                  <input type="number" value={h.par} onChange={e => updateCourseHole(i, 'par', e.target.value)} className="w-full px-1 py-1 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs text-center focus:outline-none" />
+                                  <input type="number" value={h.stroke_index} onChange={e => updateCourseHole(i, 'stroke_index', e.target.value)} className="w-full px-1 py-1 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs text-center focus:outline-none" />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={saveCourseHoles} disabled={saving} className="mt-3 w-full py-2 rounded-lg bg-[#D4AF37] text-[#051A10] font-bold text-xs hover:bg-[#F1D67E] disabled:opacity-40"><Check size={14} className="inline mr-1" /> Save Holes</button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -206,82 +244,62 @@ export default function SeasonWizard({ onComplete }) {
           </div>
         )}
 
-        {/* STEP 3: Rounds & Holes */}
+        {/* STEP 3: Rounds (holes are on the course) */}
         {step === 3 && (
           <div>
-            <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider mb-4 flex items-center gap-2"><Golf size={16} className="text-[#D4AF37]" /> Rounds ({setupRounds.length})</h3>
-            <div className="space-y-3 mb-4">
-              {rounds.filter(r => r.is_setup).map((r, ri) => {
-                const realIdx = rounds.indexOf(r);
-                return (
-                <div key={r.id} className="rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10 overflow-hidden">
-                  <div className="flex items-center justify-between py-2.5 px-4">
-                    <div><span className="text-white text-sm font-semibold">Round {r.round_number}</span><span className="text-[#A9C5B4] text-xs ml-2">{r.courses?.name}</span></div>
-                    <button onClick={() => setEditingHoles(editingHoles === realIdx ? null : realIdx)} className="text-xs text-[#D4AF37] border border-[#D4AF37]/30 px-2 py-1 rounded hover:bg-[#D4AF37]/10">{editingHoles === realIdx ? 'Close' : 'Edit Holes'}</button>
+            <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider mb-2 flex items-center gap-2"><Golf size={16} className="text-[#D4AF37]" /> Rounds ({setupRounds.length})</h3>
+            <p className="text-xs text-[#A9C5B4]/70 italic mb-4">Each round uses the holes you configured on its course — you don't need to set them again here.</p>
+            <div className="space-y-2 mb-4">
+              {setupRounds.map(r => (
+                <div key={r.id} className="py-2.5 px-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10 text-sm flex items-center justify-between">
+                  <div>
+                    <span className="text-white font-semibold">Round {r.round_number}</span>
+                    <span className="text-[#A9C5B4] text-xs ml-2">{r.courses?.name}</span>
                   </div>
-                  {editingHoles === realIdx && r.holes && (
-                    <div className="px-4 pb-4 border-t border-[#D4AF37]/10">
-                      <div className="grid grid-cols-[50px_1fr_1fr] gap-1 text-[10px] text-[#A9C5B4] uppercase tracking-wider py-2"><span>Hole</span><span>Par</span><span>SI</span></div>
-                      <div className="max-h-[300px] overflow-y-auto space-y-1">
-                        {r.holes.map((h, hi) => (
-                          <div key={h.hole_number} className="grid grid-cols-[50px_1fr_1fr] gap-1 items-center">
-                            <span className="text-white text-xs font-bold text-center">{h.hole_number}</span>
-                            <input type="number" value={h.par} onChange={e => updateHole(realIdx, hi, 'par', e.target.value)} className="px-2 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs text-center focus:outline-none" />
-                            <input type="number" value={h.stroke_index} onChange={e => updateHole(realIdx, hi, 'stroke_index', e.target.value)} className="px-2 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs text-center focus:outline-none" />
-                          </div>
-                        ))}
-                      </div>
-                      <button onClick={() => saveHoles(realIdx)} disabled={saving} className="mt-3 w-full py-2 rounded-lg bg-[#D4AF37] text-[#051A10] font-bold text-xs hover:bg-[#F1D67E] disabled:opacity-40"><Check size={14} className="inline mr-1" /> Save Holes</button>
-                    </div>
-                  )}
+                  <span className="text-[10px] uppercase tracking-wider text-emerald-400">Holes from course</span>
                 </div>
-              );})}
+              ))}
             </div>
             <div className="border-t border-[#D4AF37]/10 pt-4">
               <p className="text-xs text-[#A9C5B4] mb-2">Add New Round</p>
               <div className="flex gap-2">
                 <select id="newRoundCourse" className="flex-1 px-3 py-2 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white text-sm focus:outline-none">
                   <option value="">Select course...</option>
-                  {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {activeCourses.map(c => <option key={c.id} value={c.id}>{c.name} (Par {c.par})</option>)}
                 </select>
-                <button onClick={() => { const sel = document.getElementById('newRoundCourse'); addRound(sel.value); }} disabled={saving} className="px-4 py-2 bg-[#D4AF37] text-[#051A10] font-bold text-sm rounded-lg hover:bg-[#F1D67E] disabled:opacity-40"><Plus size={16} /></button>
+                <button onClick={() => { const sel = document.getElementById('newRoundCourse'); addRound(sel.value); sel.value = ''; }} disabled={saving} className="px-4 py-2 bg-[#D4AF37] text-[#051A10] font-bold text-sm rounded-lg hover:bg-[#F1D67E] disabled:opacity-40"><Plus size={16} /></button>
               </div>
             </div>
           </div>
         )}
 
-        {/* STEP 4: Teams */}
+        {/* STEP 4: Season-wide Teams */}
         {step === 4 && (
           <div>
-            <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider mb-4 flex items-center gap-2"><UsersThree size={16} className="text-[#D4AF37]" /> Team Pairings</h3>
-            {setupRounds.map(r => {
-              const roundTeams = teams.filter(t => t.round_id === r.id);
-              return (
-                <div key={r.id} className="mb-4">
-                  <p className="text-xs text-[#D4AF37]/70 uppercase tracking-wider mb-2">Round {r.round_number} - {r.courses?.name}</p>
-                  <div className="space-y-1 mb-2">
-                    {roundTeams.map(t => (
-                      <div key={t.id} className="flex items-center justify-between py-1.5 px-3 rounded bg-[#051A10]/60 border border-[#D4AF37]/10 text-sm">
-                        <span className="text-white">{t.player1?.name} & {t.player2?.name}</span>
-                        <button onClick={async () => { await db.deleteTeam(t.id); setTeams(await db.getAllTeams()); }} className="text-[#A9C5B4] hover:text-red-400"><Trash size={14} /></button>
-                      </div>
-                    ))}
-                    {roundTeams.length === 0 && <p className="text-[#A9C5B4] text-xs">No teams yet</p>}
-                  </div>
-                  <div className="flex gap-2">
-                    <select value={newTeam.player1} onChange={e => setNewTeam(t => ({ ...t, player1: e.target.value }))} className="flex-1 px-2 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs focus:outline-none">
-                      <option value="">Player 1...</option>
-                      {players.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                    <select value={newTeam.player2} onChange={e => setNewTeam(t => ({ ...t, player2: e.target.value }))} className="flex-1 px-2 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs focus:outline-none">
-                      <option value="">Player 2...</option>
-                      {players.filter(p => String(p.id) !== newTeam.player1).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                    <button onClick={() => addTeam(r.id)} disabled={saving || !newTeam.player1 || !newTeam.player2} className="px-3 py-1.5 bg-[#D4AF37] text-[#051A10] font-bold text-xs rounded hover:bg-[#F1D67E] disabled:opacity-40"><Plus size={14} /></button>
-                  </div>
+            <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider mb-2 flex items-center gap-2"><UsersThree size={16} className="text-[#D4AF37]" /> Season Team Pairings ({seasonTeams.length})</h3>
+            <p className="text-xs text-[#A9C5B4]/70 italic mb-4">Set once — these pairings play together across every round.</p>
+            <div className="space-y-1 mb-4">
+              {seasonTeams.length === 0 && <p className="text-xs text-[#A9C5B4]/60 py-3 text-center">No teams yet.</p>}
+              {seasonTeams.map(t => (
+                <div key={t.id} className="flex items-center justify-between py-1.5 px-3 rounded bg-[#051A10]/60 border border-[#D4AF37]/10 text-sm">
+                  <span className="text-white">{t.player1?.name} &amp; {t.player2?.name}</span>
+                  <button onClick={async () => { await db.deleteTeam(t.id); setTeams(await db.getAllTeams()); }} className="text-[#A9C5B4] hover:text-red-400"><Trash size={14} /></button>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+            <div className="border-t border-[#D4AF37]/10 pt-4">
+              <div className="flex gap-2">
+                <select value={newTeam.player1} onChange={e => setNewTeam(t => ({ ...t, player1: e.target.value }))} className="flex-1 px-2 py-2 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-sm focus:outline-none">
+                  <option value="">Player 1...</option>
+                  {players.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <select value={newTeam.player2} onChange={e => setNewTeam(t => ({ ...t, player2: e.target.value }))} className="flex-1 px-2 py-2 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-sm focus:outline-none">
+                  <option value="">Player 2...</option>
+                  {players.filter(p => String(p.id) !== newTeam.player1).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <button onClick={addTeam} disabled={saving || !newTeam.player1 || !newTeam.player2} className="px-3 py-2 bg-[#D4AF37] text-[#051A10] font-bold text-sm rounded hover:bg-[#F1D67E] disabled:opacity-40"><Plus size={16} /></button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -293,9 +311,9 @@ export default function SeasonWizard({ onComplete }) {
             <p className="text-[#A9C5B4] text-sm mb-6">Your league is configured with:</p>
             <div className="grid grid-cols-2 gap-3 max-w-xs mx-auto mb-6">
               <div className="text-center py-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10"><p className="text-xl font-bold text-white">{players.length}</p><p className="text-xs text-[#A9C5B4]">Players</p></div>
-              <div className="text-center py-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10"><p className="text-xl font-bold text-white">{courses.length}</p><p className="text-xs text-[#A9C5B4]">Courses</p></div>
+              <div className="text-center py-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10"><p className="text-xl font-bold text-white">{activeCourses.length}</p><p className="text-xs text-[#A9C5B4]">Active Courses</p></div>
               <div className="text-center py-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10"><p className="text-xl font-bold text-white">{setupRounds.length}</p><p className="text-xs text-[#A9C5B4]">Rounds</p></div>
-              <div className="text-center py-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10"><p className="text-xl font-bold text-white">{teams.length}</p><p className="text-xs text-[#A9C5B4]">Teams</p></div>
+              <div className="text-center py-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10"><p className="text-xl font-bold text-white">{seasonTeams.length}</p><p className="text-xs text-[#A9C5B4]">Teams</p></div>
             </div>
             <button onClick={onComplete} className="px-8 py-3 bg-[#D4AF37] text-[#051A10] font-bold rounded-lg hover:bg-[#F1D67E] transition-colors">Go to Dashboard</button>
           </div>

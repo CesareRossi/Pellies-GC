@@ -9,7 +9,6 @@ import SeasonWizard from './components/SeasonWizard';
 const REFRESH_INTERVAL = 5 * 60 * 1000;
 
 const formatLastUpdated = (ts) => ts ? new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Never';
-const getRankBadge = (row) => { const r = parseInt(row.rank || row.Rank); return r >= 1 && r <= 3 ? r : null; };
 
 // ===== NAV DROPDOWN =====
 const NavDropdown = ({ label, icon, items, activeId, onSelect, testId }) => {
@@ -109,19 +108,29 @@ const QN = ({icon,title,desc,onClick}) => (<button onClick={onClick} className="
 // ===== DATA TABLE =====
 const DataTable = ({data}) => {
   if(!data?.length) return <div className="py-12 text-center text-[#A9C5B4]">No data</div>;
-  const headers = Object.keys(data[0]);
+  // Hide internal sorting helper columns from the UI
+  const hiddenKeys = new Set(['rank_display']);
+  const headers = Object.keys(data[0]).filter(h => !hiddenKeys.has(h));
   return (
     <div className="rounded-lg border border-[#D4AF37]/20 bg-[#0F2C1D]/80 backdrop-blur-md overflow-hidden shadow-2xl" data-testid="table-container"><div className="overflow-x-auto"><table className="w-full">
       <thead><tr className="bg-[#0A2A1A] border-b border-[#D4AF37]/30">
         {headers.map((h,i)=>{const isName=h.toLowerCase()==='player'||h.toLowerCase()==='team';return<th key={i} className={`py-4 px-4 text-xs font-sans tracking-[0.15em] uppercase text-[#A9C5B4] ${isName?'text-left':'text-center'}`}>{h}</th>;})}
       </tr></thead>
-      <tbody>{data.map((row,ri)=>{const rb=getRankBadge(row);return(
-        <tr key={ri} className={`${ri%2===0?'bg-transparent':'bg-[#FFFFFF]/5'} hover:bg-[#163A27] transition-colors ${rb?'border-l-2 border-[#D4AF37]':''}`}>
-          {Object.entries(row).map(([k,v],ci)=>{const isName=k.toLowerCase()==='player'||k.toLowerCase()==='team';return(
+      <tbody>{data.map((row,ri)=>{
+        const rankDisp = row.rank_display || (row.rank ? String(row.rank) : null);
+        const numericRank = parseInt(row.rank);
+        const isTopThree = numericRank >= 1 && numericRank <= 3;
+        return(
+        <tr key={ri} className={`${ri%2===0?'bg-transparent':'bg-[#FFFFFF]/5'} hover:bg-[#163A27] transition-colors ${isTopThree?'border-l-2 border-[#D4AF37]':''}`}>
+          {headers.map((k,ci)=>{
+            const v = row[k];
+            const isName=k.toLowerCase()==='player'||k.toLowerCase()==='team';
+            const isRankCol = k.toLowerCase() === 'rank';
+            return(
             <td key={ci} className={`py-3 px-4 text-sm font-sans text-white ${isName?'text-left':'text-center'}`}>
               <div className={`flex items-center gap-2 ${isName?'':'justify-center'}`}>
-                {ci===0&&rb&&<span className="inline-flex items-center justify-center rounded-full bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/40 px-2 py-0.5 text-xs font-bold">#{rb}</span>}
-                <span>{String(v)}</span>
+                {ci===0&&isTopThree&&<span className="inline-flex items-center justify-center rounded-full bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/40 px-2 py-0.5 text-xs font-bold">#{numericRank}</span>}
+                <span>{isRankCol && rankDisp ? rankDisp : String(v)}</span>
               </div>
             </td>);})}
         </tr>);})}</tbody>
@@ -200,7 +209,7 @@ const ScoreEntry = ({rounds, players, userId}) => {
 
   useEffect(() => {
     if(!selectedRound) return;
-    db.getRoundHoles(selectedRound).then(setHoles);
+    db.getHolesForRound(selectedRound).then(setHoles).catch(()=>setHoles([]));
     setSelectedPlayer(null); setScores({});
   }, [selectedRound]);
 
@@ -254,6 +263,12 @@ const ScoreEntry = ({rounds, players, userId}) => {
         <span>Rating: <strong className="text-white">{rd.courses?.rating}</strong></span>
         <span>Slope: <strong className="text-white">{rd.courses?.slope}</strong></span>
       </div>}
+      {selectedPlayer&&holes.length===0&&(
+        <div className="max-w-2xl mx-auto rounded-xl border border-amber-500/30 bg-amber-900/20 p-5 text-center">
+          <p className="text-amber-300 text-sm font-semibold mb-1">No holes configured for this course yet</p>
+          <p className="text-[#A9C5B4] text-xs">Ask an admin to set par &amp; stroke-index in <strong>Admin → Courses → Holes</strong> for {rd?.courses?.name || 'this course'}.</p>
+        </div>
+      )}
       {selectedPlayer&&holes.length>0&&(
         <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 overflow-hidden shadow-2xl max-w-3xl mx-auto">
           <div className="p-4 border-b border-[#D4AF37]/10 flex items-center justify-between">
@@ -302,21 +317,32 @@ function App() {
   // Auth
   useEffect(() => {
     let mounted = true;
-    // onAuthChange fires synchronously on subscribe with INITIAL_SESSION,
-    // so we don't need a separate getSession() call (which caused a race).
+    let retryTimer;
+    const fetchProfileWithRetry = async (session) => {
+      // Try once immediately
+      let p = await db.getUserProfile(session);
+      if (mounted && p) { setProfile(p); return; }
+      // Retry up to 3 times with 2s delays — supabase-js may still be
+      // refreshing the token on a fresh page load, causing the first call to stall.
+      for (let i = 0; i < 3 && mounted; i++) {
+        await new Promise(r => retryTimer = setTimeout(r, 2000));
+        if (!mounted) return;
+        p = await db.getUserProfile(session);
+        if (mounted && p) { setProfile(p); return; }
+      }
+      if (mounted && !p) setProfile(null);
+    };
+
     const { data: { subscription } } = db.onAuthChange(async (event, session) => {
       if (!mounted) return;
       setUser(session?.user || null);
       if (session?.user) {
-        try {
-          const p = await db.getUserProfile();
-          if (mounted) setProfile(p);
-        } catch (e) { console.error('Profile fetch error:', e); }
+        fetchProfileWithRetry(session);
       } else {
         setProfile(null);
       }
     });
-    return () => { mounted = false; subscription.unsubscribe(); };
+    return () => { mounted = false; clearTimeout(retryTimer); subscription.unsubscribe(); };
   }, []);
 
   const loadData = useCallback(async () => {
@@ -331,6 +357,8 @@ function App() {
 
   const loadView = useCallback(async (v, param) => {
     setLoading(true);
+    // Safety: force-clear loading after 15s so the user is never stuck on a "Loading..." spinner
+    const safety = setTimeout(() => setLoading(false), 15000);
     try {
       if (v === 'overview') { setOverview(await db.getSeasonOverview()); }
       else if (v === 'league_lb') { setLeaderboard(await db.getLeaderboardData()); }
@@ -340,14 +368,34 @@ function App() {
       else if (v === 'teams' && param) { setSheetData(await db.getTeamRoundData(param)); }
       setLastUpdated(new Date().toISOString());
     } catch(err) { console.error(err); }
-    finally { setLoading(false); }
+    finally { clearTimeout(safety); setLoading(false); }
   }, []);
 
   useEffect(() => { loadView(view, viewParam); }, [view, viewParam, loadView]);
 
   const navigate = (v, param) => { setView(v); setViewParam(param || (v==='stableford'||v==='teams'?rounds[0]?.id:null)); };
 
-  const handleRefresh = async () => { setRefreshing(true); await loadData(); await loadView(view, viewParam); setRefreshing(false); };
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      // Also refresh auth profile so admin sees latest user rows and stale sessions are corrected
+      if (user) {
+        try { const p = await db.getUserProfile(); setProfile(p); } catch (_) {}
+      }
+      await loadData();
+      await loadView(view, viewParam);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try { await db.signOut(); } catch (_) {}
+    setUser(null);
+    setProfile(null);
+    setView('overview');
+    setViewParam(null);
+  };
 
   const isAdmin = profile?.role === 'admin';
   const canScore = !!user; // Any logged-in user can enter scores
@@ -372,7 +420,7 @@ function App() {
                   <ArrowsClockwise size={18} weight="bold" className={refreshing?'animate-spin':''}/><span className="hidden sm:inline text-sm">Refresh</span>
                 </button>
                 {user ? (
-                  <button onClick={()=>db.signOut()} className="flex items-center gap-1 px-3 py-2 text-xs text-[#A9C5B4] hover:text-red-400 transition-colors">
+                  <button onClick={handleSignOut} className="flex items-center gap-1 px-3 py-2 text-xs text-[#A9C5B4] hover:text-red-400 transition-colors" data-testid="sign-out-button">
                     <SignOut size={16}/><span className="hidden sm:inline">{profile?.display_name||user.email.split('@')[0]}</span>
                   </button>
                 ) : (
