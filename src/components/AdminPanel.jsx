@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PencilSimple, Trash, Plus, Check, X, UserCircle, ShieldCheck, Clock, ShieldSlash, Warning } from '@phosphor-icons/react';
+import { PencilSimple, Trash, Plus, Check, X, UserCircle, ShieldCheck, Clock, ShieldSlash, Warning, Flag, Trophy, CaretDown } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
 import ConfirmModal from './ConfirmModal';
+import SeasonRecapModal from './SeasonRecap';
 
 const Modal = ({ title, onClose, children, footer, wide = false }) => createPortal(
   <motion.div
@@ -650,6 +651,248 @@ const UsersPanel = () => {
   );
 };
 
+// ===== SEASON (v8) — name / rename current season + archive + history =====
+const SeasonPanel = ({ onSeasonChanged }) => {
+  const [current, setCurrent] = useState(null);
+  const [archived, setArchived] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [tableExists, setTableExists] = useState(true);
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  // Archive flow
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [newSeasonName, setNewSeasonName] = useState('');
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  // Expanded archive row
+  const [openArchived, setOpenArchived] = useState(null);
+  const [recapSeason, setRecapSeason] = useState(null);
+
+  useEffect(() => { load(); }, []);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const exists = await db.seasonsTableExists();
+      setTableExists(exists);
+      if (!exists) {
+        setCurrent(null);
+        setArchived([]);
+        return;
+      }
+      const [c, a] = await Promise.all([db.getCurrentSeason(), db.getArchivedSeasons()]);
+      setCurrent(c);
+      setArchived(a);
+    } catch (e) { setMsg('Error: ' + e.message); }
+    finally { setLoading(false); }
+  };
+
+  const startRename = () => { setNameDraft(current?.name || ''); setRenaming(true); setMsg(''); };
+
+  const saveRename = async () => {
+    if (!nameDraft.trim()) return;
+    setSaveBusy(true); setMsg('');
+    try {
+      await db.updateCurrentSeasonName(nameDraft.trim());
+      setRenaming(false);
+      await load();
+      setMsg('Season name updated.');
+      setTimeout(() => setMsg(''), 3500);
+      onSeasonChanged?.();
+    } catch (e) { setMsg('Error: ' + e.message); }
+    finally { setSaveBusy(false); }
+  };
+
+  const openArchiveFlow = () => {
+    // Suggest next year by default
+    const yr = new Date().getFullYear() + 1;
+    setNewSeasonName(`Pellies Golf League ${yr}`);
+    setArchiveOpen(true);
+    setMsg('');
+  };
+
+  const doArchive = async () => {
+    if (!newSeasonName.trim()) return;
+    setArchiving(true); setMsg('');
+    try {
+      await db.archiveAndStartNewSeason(newSeasonName.trim());
+      setArchiveOpen(false);
+      setConfirmArchive(false);
+      await load();
+      setMsg(`✅ Season archived. New season "${newSeasonName.trim()}" is now active. Refresh the dashboard to see a clean slate.`);
+      onSeasonChanged?.();
+    } catch (e) { setMsg('Error: ' + e.message); }
+    finally { setArchiving(false); }
+  };
+
+  if (loading) return <p className="text-xs text-[#A9C5B4]/60 py-4 text-center">Loading season…</p>;
+
+  if (!tableExists) {
+    return (
+      <div>
+        <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider mb-3 flex items-center gap-2"><Flag size={14} className="text-[#D4AF37]" weight="duotone" /> Seasons — setup required</h3>
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-5" data-testid="seasons-migration-notice">
+          <p className="text-amber-200 text-sm font-semibold mb-2">One-time migration needed</p>
+          <p className="text-amber-100/80 text-xs leading-relaxed mb-3">
+            To unlock named seasons, archive and history, run the updated <span className="font-mono text-[#D4AF37]">SUPABASE_SETUP.sql</span> from the app repo in your Supabase SQL Editor. It only adds the new <span className="font-mono text-[#D4AF37]">seasons</span> table and seeds your first season — existing data is untouched.
+          </p>
+          <ol className="text-[11px] text-amber-100/80 list-decimal ml-4 space-y-1">
+            <li>Supabase dashboard → SQL Editor → paste the script → Run</li>
+            <li>Come back and press <span className="text-[#D4AF37]">Refresh</span> (top right)</li>
+          </ol>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-5">
+        <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider flex-1 flex items-center gap-2"><Flag size={14} className="text-[#D4AF37]" weight="duotone" /> Current Season</h3>
+      </div>
+      {msg && <div className={`mb-4 py-2 px-3 rounded-lg text-xs leading-relaxed ${msg.includes('Error') ? 'bg-red-900/30 text-red-300 border border-red-500/30' : 'bg-emerald-900/30 text-emerald-300 border border-emerald-500/30'}`} data-testid="season-msg">{msg}</div>}
+
+      {/* Current season card */}
+      <div className="rounded-xl border border-[#D4AF37]/25 bg-gradient-to-br from-[#D4AF37]/10 to-transparent p-5 mb-6">
+        {!renaming ? (
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] uppercase tracking-[0.15em] text-[#D4AF37]/80 mb-1">Active</p>
+              <p className="text-white text-xl font-serif truncate" data-testid="current-season-name">{current?.name || '— no season —'}</p>
+              {current?.started_at && <p className="text-[#A9C5B4] text-xs mt-1">Started {new Date(current.started_at).toLocaleDateString()}</p>}
+            </div>
+            <button onClick={startRename} className="text-[#A9C5B4] hover:text-[#D4AF37] flex-shrink-0" data-testid="season-rename-btn"><PencilSimple size={16} /></button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <Field label="Season name" value={nameDraft} onChange={setNameDraft} placeholder="e.g. Pellies Golf League 2026" />
+            <div className="flex gap-2">
+              <button onClick={saveRename} disabled={saveBusy || !nameDraft.trim()} className="flex-1 py-2 rounded-lg bg-[#D4AF37] text-[#051A10] font-bold text-sm hover:bg-[#F1D67E] disabled:opacity-50" data-testid="season-save-name">{saveBusy ? 'Saving…' : 'Save'}</button>
+              <button onClick={() => setRenaming(false)} className="px-3 py-2 rounded-lg border border-[#D4AF37]/30 text-[#A9C5B4] text-sm hover:text-white">Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Archive action */}
+      <div className="mb-6">
+        <h4 className="text-xs text-[#A9C5B4]/80 uppercase tracking-wider mb-2">End of Season</h4>
+        <p className="text-[11px] text-[#A9C5B4]/70 italic leading-relaxed mb-3">
+          Archives the current standings &amp; awards as a permanent snapshot, then wipes rounds/scores/teams/exclusions to start a fresh season. Players, courses, and course-hole setup are kept.
+        </p>
+        <button onClick={openArchiveFlow} className="w-full py-3 rounded-lg border border-[#D4AF37]/40 text-[#D4AF37] text-sm font-semibold hover:bg-[#D4AF37]/10 transition-colors" data-testid="season-archive-btn">
+          🏁 Archive &amp; start new season
+        </button>
+      </div>
+
+      {/* Archive modal — step 1: pick name */}
+      <AnimatePresence>{archiveOpen && (
+        <Modal title="Start a new season" onClose={() => setArchiveOpen(false)}
+          footer={
+            <button
+              onClick={() => { if (newSeasonName.trim()) setConfirmArchive(true); }}
+              disabled={!newSeasonName.trim() || archiving}
+              className="w-full py-2.5 rounded-lg bg-[#D4AF37] text-[#051A10] font-bold text-sm hover:bg-[#F1D67E] disabled:opacity-50"
+              data-testid="season-archive-next"
+            >
+              Continue →
+            </button>
+          }>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-[#D4AF37]/20 bg-[#051A10]/60 p-3 text-xs text-[#A9C5B4] leading-relaxed">
+              <p className="text-[#D4AF37] font-semibold mb-1">Current season: {current?.name || '—'}</p>
+              <p>It will be archived with a full snapshot of the leaderboards, awards and player stats — viewable any time below.</p>
+            </div>
+            <Field label="New season name" value={newSeasonName} onChange={setNewSeasonName} placeholder={`Pellies Golf League ${new Date().getFullYear()+1}`} />
+          </div>
+        </Modal>
+      )}</AnimatePresence>
+
+      {/* Confirm archive */}
+      <ConfirmModal
+        open={confirmArchive}
+        title="Archive current season?"
+        message={`This will permanently archive "${current?.name || 'the current season'}" with its final standings, then wipe every round, score, team and exclusion so "${newSeasonName.trim()}" starts clean. Players, courses and hole setup are preserved. This cannot be undone.`}
+        confirmLabel={archiving ? 'Working…' : 'Archive & start new'}
+        onConfirm={doArchive}
+        onClose={() => setConfirmArchive(false)}
+      />
+
+      {/* Archived seasons */}
+      <h4 className="text-xs text-[#A9C5B4]/80 uppercase tracking-wider mb-2 flex items-center gap-2"><Trophy size={12} className="text-[#D4AF37]" weight="duotone" /> Season History ({archived.length})</h4>
+      {archived.length === 0 ? (
+        <p className="text-[11px] text-[#A9C5B4]/60 italic py-3">No archived seasons yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {archived.map(s => {
+            const champ = s.summary_json?.champion;
+            const team = s.summary_json?.champion_team;
+            const isOpen = openArchived === s.id;
+            return (
+              <div key={s.id} className="rounded-lg border border-[#D4AF37]/15 bg-[#051A10]/60">
+                <button onClick={() => setOpenArchived(isOpen ? null : s.id)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#D4AF37]/5" data-testid={`archived-season-${s.id}`}>
+                  <Flag size={16} className="text-[#D4AF37]/80" weight="duotone" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-semibold truncate">{s.name}</p>
+                    <p className="text-[11px] text-[#A9C5B4]">
+                      Ended {s.ended_at ? new Date(s.ended_at).toLocaleDateString() : '—'}
+                      {champ && <span className="ml-2">· 🏆 {champ.player || champ.Player} · {champ.total ?? champ.Total} pts</span>}
+                    </p>
+                  </div>
+                  <motion.div animate={{ rotate: isOpen ? 180 : 0 }} className="text-[#A9C5B4]"><CaretDown size={14} /></motion.div>
+                </button>
+                <AnimatePresence initial={false}>
+                  {isOpen && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
+                      <div className="px-4 pb-4 pt-1 border-t border-[#D4AF37]/10 space-y-3 text-xs">
+                        {champ && (
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wider text-[#D4AF37]/80 mb-1">League Champion</p>
+                            <p className="text-white font-semibold">{champ.player || champ.Player} — {champ.total ?? champ.Total} pts</p>
+                          </div>
+                        )}
+                        {team && (
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wider text-[#D4AF37]/80 mb-1">Top Team</p>
+                            <p className="text-white font-semibold">{team.player || team.Team || team.team} — {team.total ?? team.Total} pts</p>
+                          </div>
+                        )}
+                        {s.summary_json?.awards?.season && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-[#D4AF37]/10">
+                            <div className="rounded-md bg-amber-500/10 border border-amber-500/20 px-2 py-1.5">
+                              <p className="text-[10px] text-amber-300 uppercase tracking-wider">🥄 Wooden Spoon Leader</p>
+                              <p className="text-white text-sm font-semibold">{s.summary_json.awards.season.wooden_spoon_leader?.player || '—'}</p>
+                            </div>
+                            <div className="rounded-md bg-purple-500/10 border border-purple-500/20 px-2 py-1.5">
+                              <p className="text-[10px] text-purple-300 uppercase tracking-wider">🎭 Joker King</p>
+                              <p className="text-white text-sm font-semibold">{s.summary_json.awards.season.joker_king?.player || '—'}</p>
+                            </div>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => setRecapSeason(s)}
+                          className="w-full py-2 rounded-lg border border-[#D4AF37]/40 text-[#D4AF37] text-xs font-semibold hover:bg-[#D4AF37]/10 transition-colors flex items-center justify-center gap-2 mt-2"
+                          data-testid={`archive-share-${s.id}`}
+                        >
+                          📸 Share season recap
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <AnimatePresence>
+        {recapSeason && <SeasonRecapModal season={recapSeason} onClose={() => setRecapSeason(null)} />}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 // ===== DANGER ZONE (reset season / clear scores) =====
 const DangerPanel = () => {
   const [confirmClear, setConfirmClear] = useState(false);
@@ -718,13 +961,13 @@ const DangerPanel = () => {
 };
 
 // ===== MAIN ADMIN PANEL =====
-export default function AdminPanel() {
+export default function AdminPanel({ onSeasonChanged }) {
   const [tab, setTab] = useState('players');
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} data-testid="admin-panel">
       <div className="text-center mb-8"><h2 className="text-3xl font-serif text-[#D4AF37] mb-2">Admin Panel</h2><p className="text-[#A9C5B4] text-sm">Manage your golf league</p></div>
       <div className="flex flex-wrap gap-2 justify-center mb-8">
-        {['players','courses','rounds','teams','users','danger'].map(t => <TabBtn key={t} active={tab===t} label={t==='danger' ? 'Danger Zone' : t.charAt(0).toUpperCase()+t.slice(1)} onClick={()=>setTab(t)}/>)}
+        {['players','courses','rounds','teams','users','season','danger'].map(t => <TabBtn key={t} active={tab===t} label={t==='danger' ? 'Danger Zone' : t==='season' ? 'Season' : t.charAt(0).toUpperCase()+t.slice(1)} onClick={()=>setTab(t)}/>)}
       </div>
       <div className="max-w-2xl mx-auto rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md p-6 shadow-2xl">
         {tab === 'players' && <PlayersPanel />}
@@ -732,6 +975,7 @@ export default function AdminPanel() {
         {tab === 'rounds' && <RoundsPanel />}
         {tab === 'teams' && <TeamsPanel />}
         {tab === 'users' && <UsersPanel />}
+        {tab === 'season' && <SeasonPanel onSeasonChanged={onSeasonChanged} />}
         {tab === 'danger' && <DangerPanel />}
       </div>
     </motion.div>

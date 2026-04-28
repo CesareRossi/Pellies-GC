@@ -1182,3 +1182,155 @@ export async function getTeamRoundData(roundId) {
     data: sortedData,
   };
 }
+
+// ===== SEASONS (v8) =====
+// One active season + archive of past seasons with full snapshot payloads.
+
+// Supabase-js can throw "body stream already read" when the REST endpoint
+// returns an error (e.g. the table doesn't exist yet). We normalise that
+// to "table missing" and return a friendly result so the UI can prompt
+// the admin to run SUPABASE_SETUP.sql.
+function isTableMissing(err) {
+  const msg = (err?.message || '').toLowerCase();
+  return msg.includes("could not find the table") ||
+         msg.includes('public.seasons') ||
+         msg.includes('body stream already read') ||
+         err?.code === 'PGRST205' ||
+         err?.code === '42P01';
+}
+
+export async function getCurrentSeason() {
+  try {
+    const { data, error } = await supabase
+      .from('seasons')
+      .select('*')
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data; // may be null if none seeded yet
+  } catch (e) {
+    if (isTableMissing(e)) return null;
+    throw e;
+  }
+}
+
+export async function getAllSeasons() {
+  try {
+    const { data, error } = await supabase
+      .from('seasons')
+      .select('*')
+      .order('is_active', { ascending: false })
+      .order('ended_at', { ascending: false, nullsFirst: false })
+      .order('started_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  } catch (e) {
+    if (isTableMissing(e)) return [];
+    throw e;
+  }
+}
+
+export async function getArchivedSeasons() {
+  try {
+    const { data, error } = await supabase
+      .from('seasons')
+      .select('id, name, started_at, ended_at, summary_json')
+      .eq('is_active', false)
+      .order('ended_at', { ascending: false, nullsFirst: false });
+    if (error) throw error;
+    return data || [];
+  } catch (e) {
+    if (isTableMissing(e)) return [];
+    throw e;
+  }
+}
+
+// Lightweight probe: true if the seasons table is reachable.
+// Uses raw fetch so supabase-js body-stream bugs don't surface here.
+export async function seasonsTableExists() {
+  try {
+    const url = process.env.REACT_APP_SUPABASE_URL;
+    const key = process.env.REACT_APP_SUPABASE_KEY;
+    if (!url || !key) return true;
+    const res = await fetch(`${url}/rest/v1/seasons?select=id&limit=1`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+    });
+    if (res.status === 404) return false;
+    if (res.ok) return true;
+    const body = await res.text();
+    if (/could not find the table|PGRST205|42P01/i.test(body)) return false;
+    return true;
+  } catch (e) {
+    if (isTableMissing(e)) return false;
+    return true;
+  }
+}
+
+export async function updateCurrentSeasonName(name) {
+  const current = await getCurrentSeason();
+  if (!current) throw new Error('No active season to rename.');
+  const { error } = await supabase.from('seasons').update({ name }).eq('id', current.id);
+  if (error) throw error;
+}
+
+// Archive the current season and start a new one with `newName`.
+// Snapshot is computed live from the current state, then all rounds/scores/teams/exclusions
+// are wiped (players, courses and course_holes are preserved).
+export async function archiveAndStartNewSeason(newName) {
+  if (!newName || !newName.trim()) throw new Error('New season name is required.');
+
+  // 1. Compute the full snapshot from current data
+  const [overview, leaderboardData, teamLb, stats, awards] = await Promise.all([
+    getSeasonOverview(),
+    getLeaderboardData(),
+    getTeamLeaderboardData(),
+    getPlayerStats(),
+    getAwards(),
+  ]);
+
+  const summary = {
+    captured_at: new Date().toISOString(),
+    overview,
+    leaderboard: leaderboardData?.leaderboard || [],
+    team_leaderboard: teamLb?.leaderboard || [],
+    player_stats: stats,
+    awards,
+    // Convenience lookups so the history card doesn't have to reparse
+    champion: leaderboardData?.leaderboard?.[0] || null,
+    champion_team: teamLb?.leaderboard?.[0] || null,
+  };
+
+  // 2. Close the current season
+  const current = await getCurrentSeason();
+  if (current) {
+    const { error: e1 } = await supabase
+      .from('seasons')
+      .update({ is_active: false, ended_at: new Date().toISOString(), summary_json: summary })
+      .eq('id', current.id);
+    if (e1) throw new Error(`Failed to archive current season: ${e1.message}`);
+  }
+
+  // 3. Wipe scores/teams/round_exclusions/rounds (keep players, courses, course_holes)
+  //    Legacy round_holes table is also cleaned if it still exists.
+  const { error: eScores } = await supabase.from('scores').delete().neq('id', 0);
+  if (eScores) throw new Error(`Failed to wipe scores: ${eScores.message}`);
+  const { error: eTeams } = await supabase.from('teams').delete().neq('id', 0);
+  if (eTeams) throw new Error(`Failed to wipe teams: ${eTeams.message}`);
+  // round_exclusions cascades when rounds are deleted, but clear explicitly for safety
+  await supabase.from('round_exclusions').delete().neq('round_id', 0);
+  await supabase.from('round_holes').delete().neq('id', 0);
+  const { error: eRounds } = await supabase.from('rounds').delete().neq('id', 0);
+  if (eRounds) throw new Error(`Failed to wipe rounds: ${eRounds.message}`);
+
+  // 4. Insert the new active season
+  const { data: created, error: eNew } = await supabase
+    .from('seasons')
+    .insert({ name: newName.trim(), is_active: true, started_at: new Date().toISOString() })
+    .select()
+    .single();
+  if (eNew) throw new Error(`Failed to start new season: ${eNew.message}`);
+
+  return { archived: current, started: created, summary };
+}
+

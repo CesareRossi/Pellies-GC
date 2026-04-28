@@ -6,6 +6,7 @@ import * as db from './services/supabaseService';
 import AdminPanel from './components/AdminPanel';
 import SeasonWizard from './components/SeasonWizard';
 import Awards from './components/Awards';
+import SeasonRecapModal from './components/SeasonRecap';
 
 const REFRESH_INTERVAL = 5 * 60 * 1000;
 
@@ -68,7 +69,7 @@ const PlayerCard = ({ player, index }) => {
 const Bar = ({l,c,cl,w,ic}) => (<div className="flex items-center gap-2"><span className="text-[#A9C5B4] w-[72px] text-xs flex items-center gap-1"><span className={`${cl} rounded-full p-0.5 text-[#051A10]`}>{ic}</span>{l}</span><div className="flex-1 h-5 bg-[#051A10]/60 rounded-full overflow-hidden"><motion.div initial={{width:0}} animate={{width:w}} transition={{duration:0.8}} className={`h-full ${cl} rounded-full`}/></div><span className="text-white text-xs font-bold w-6 text-right">{c}</span></div>);
 
 // ===== SEASON OVERVIEW =====
-const Overview = ({data, onNav}) => {
+const Overview = ({data, onNav, archivedSeasons = [], onShareRecap}) => {
   if(!data) return null;
   const po=[1,0,2], ph=['h-28','h-36','h-24'], pc=['from-[#C0C0C0] to-[#A0A0A0]','from-[#D4AF37] to-[#B8860B]','from-[#CD7F32] to-[#A0522D]'], pl=['2nd','1st','3rd'];
   return (
@@ -99,6 +100,69 @@ const Overview = ({data, onNav}) => {
         <QN icon={<UsersThree size={24}/>} title="Teams" desc="Team scoring" onClick={()=>onNav('teams')}/>
         <QN icon={<User size={24}/>} title="Player Stats" desc="Breakdowns" onClick={()=>onNav('stats')}/>
       </div>
+
+      {archivedSeasons && archivedSeasons.length > 0 && (
+        <div className="mt-10" data-testid="past-champions-card">
+          <h3 className="text-xs text-[#A9C5B4] uppercase tracking-[0.2em] mb-4 flex items-center gap-2"><Trophy size={14} className="text-[#D4AF37]" weight="duotone"/> Past Champions</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {archivedSeasons.slice(0, 6).map((s) => {
+              const champ = s.summary_json?.champion;
+              const team = s.summary_json?.champion_team;
+              const spoon = s.summary_json?.awards?.season?.wooden_spoon_leader?.player;
+              const joker = s.summary_json?.awards?.season?.joker_king?.player;
+              const endYear = s.ended_at ? new Date(s.ended_at).getFullYear() : '';
+              return (
+                <motion.div
+                  key={s.id}
+                  initial={{opacity:0,y:12}} animate={{opacity:1,y:0}}
+                  className="rounded-xl border border-[#D4AF37]/20 bg-gradient-to-br from-[#D4AF37]/8 to-transparent p-4 shadow-xl"
+                  data-testid={`past-champion-${s.id}`}
+                >
+                  <div className="flex items-baseline justify-between mb-3 gap-2">
+                    <p className="text-sm font-serif text-[#D4AF37] truncate">{s.name}</p>
+                    {endYear && <span className="text-[10px] text-[#A9C5B4]/70 uppercase tracking-wider flex-shrink-0">{endYear}</span>}
+                  </div>
+                  <div className="space-y-1.5 text-xs">
+                    {champ && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#A9C5B4]/80">🏆 Champion</span>
+                        <span className="text-white font-semibold truncate max-w-[60%]">{champ.player || champ.Player || '—'}</span>
+                      </div>
+                    )}
+                    {team && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#A9C5B4]/80">👥 Top Team</span>
+                        <span className="text-white font-semibold truncate max-w-[60%]">{team.player || team.Team || team.team || '—'}</span>
+                      </div>
+                    )}
+                    {spoon && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#A9C5B4]/80">🥄 Spoon</span>
+                        <span className="text-white/80 truncate max-w-[60%]">{spoon}</span>
+                      </div>
+                    )}
+                    {joker && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#A9C5B4]/80">🎭 Joker King</span>
+                        <span className="text-white/80 truncate max-w-[60%]">{joker}</span>
+                      </div>
+                    )}
+                  </div>
+                  {onShareRecap && (
+                    <button
+                      onClick={() => onShareRecap(s)}
+                      className="mt-3 w-full py-2 rounded-lg border border-[#D4AF37]/30 text-[#D4AF37] text-xs font-semibold hover:bg-[#D4AF37]/10 transition-colors"
+                      data-testid={`past-champion-share-${s.id}`}
+                    >
+                      📸 Share recap
+                    </button>
+                  )}
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 };
@@ -363,6 +427,9 @@ function App() {
   const [sheetData, setSheetData] = useState(null);
   const [rounds, setRounds] = useState([]);
   const [players, setPlayers] = useState([]);
+  const [currentSeason, setCurrentSeason] = useState(null);
+  const [archivedSeasons, setArchivedSeasons] = useState([]);
+  const [recapSeason, setRecapSeason] = useState(null);
 
   // Auth
   useEffect(() => {
@@ -397,8 +464,15 @@ function App() {
 
   const loadData = useCallback(async () => {
     try {
-      const [r, p] = await Promise.all([db.getSetUpRounds(), db.getPlayers()]);
+      const [r, p, cs, arch] = await Promise.all([
+        db.getSetUpRounds(),
+        db.getPlayers(),
+        db.getCurrentSeason().catch(() => null),
+        db.getArchivedSeasons().catch(() => []),
+      ]);
       setRounds(r); setPlayers(p);
+      setCurrentSeason(cs);
+      setArchivedSeasons(arch || []);
     } catch(err) { console.error(err); }
   }, []);
 
@@ -464,7 +538,7 @@ function App() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <img src="https://customer-assets.emergentagent.com/job_40790795-ad45-4986-96fc-d389b274e70b/artifacts/3k0g1frp_IMG_0702.JPG" alt="Pellies GC" className="h-14 object-contain"/>
-                <div><h1 className="text-2xl sm:text-3xl font-serif text-[#D4AF37] tracking-tight">Pellies Golf League 2026</h1><p className="text-xs text-[#A9C5B4] mt-0.5">Updated: {formatLastUpdated(lastUpdated)}</p></div>
+                <div><h1 className="text-2xl sm:text-3xl font-serif text-[#D4AF37] tracking-tight" data-testid="app-season-title">{currentSeason?.name || 'Pellies Golf League'}</h1><p className="text-xs text-[#A9C5B4] mt-0.5">Updated: {formatLastUpdated(lastUpdated)}</p></div>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={handleRefresh} disabled={refreshing} className="flex items-center gap-2 px-3 py-2 bg-[#D4AF37]/20 hover:bg-[#D4AF37]/30 text-[#D4AF37] border border-[#D4AF37]/40 rounded-lg transition-colors disabled:opacity-50">
@@ -499,7 +573,7 @@ function App() {
             {loading ? (
               <motion.div key="loading" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="flex items-center justify-center py-20"><div className="text-[#D4AF37] text-lg">Loading...</div></motion.div>
             ) : view==='overview'&&overview ? (
-              <Overview data={overview} onNav={navigate}/>
+              <Overview data={overview} onNav={navigate} archivedSeasons={archivedSeasons} onShareRecap={setRecapSeason}/>
             ) : view==='stats'&&playerStats ? (
               <motion.div key="stats" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -523,13 +597,14 @@ function App() {
             ) : view==='season_wizard' ? (
               <SeasonWizard onComplete={()=>{ loadData(); navigate('overview'); }}/>
             ) : view==='admin' ? (
-              <AdminPanel/>
+              <AdminPanel onSeasonChanged={loadData}/>
             ) : null}
           </AnimatePresence>
         </main>
       </div>
       <AnimatePresence>
         {showAuth&&<AuthModal onSuccess={()=>setShowAuth(false)} onClose={()=>setShowAuth(false)}/>}
+        {recapSeason&&<SeasonRecapModal season={recapSeason} onClose={()=>setRecapSeason(null)}/>}
       </AnimatePresence>
     </div>
   );
