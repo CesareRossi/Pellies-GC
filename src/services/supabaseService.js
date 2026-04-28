@@ -283,15 +283,41 @@ export async function updateRound(id, updates) {
 }
 
 export async function deleteRound(id) {
-  // Cascade delete: scores → round_holes → teams → round
+  // Cascade delete: scores → round_holes → teams → exclusions → round
   const { error: e1 } = await supabase.from('scores').delete().eq('round_id', id);
   if (e1) throw new Error(`Failed to clear scores: ${e1.message}`);
   const { error: e2 } = await supabase.from('round_holes').delete().eq('round_id', id);
   if (e2) throw new Error(`Failed to clear holes: ${e2.message}`);
   const { error: e3 } = await supabase.from('teams').delete().eq('round_id', id);
   if (e3) throw new Error(`Failed to clear teams: ${e3.message}`);
+  await supabase.from('round_exclusions').delete().eq('round_id', id);
   const { error } = await supabase.from('rounds').delete().eq('id', id);
   if (error) throw new Error(`Failed to delete round: ${error.message}`);
+}
+
+// ===== ROUND EXCLUSIONS (v7) =====
+// Mark players who didn't compete in a specific round so the season
+// completion gate and awards treat them correctly.
+export async function getRoundExclusions(roundId) {
+  const { data, error } = await supabase.from('round_exclusions').select('player_id').eq('round_id', roundId);
+  if (error) throw error;
+  return (data || []).map(r => r.player_id);
+}
+
+export async function getAllRoundExclusions() {
+  const { data, error } = await supabase.from('round_exclusions').select('round_id, player_id');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function setPlayerExcluded(roundId, playerId, excluded) {
+  if (excluded) {
+    const { error } = await supabase.from('round_exclusions').upsert({ round_id: roundId, player_id: playerId });
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from('round_exclusions').delete().eq('round_id', roundId).eq('player_id', playerId);
+    if (error) throw error;
+  }
 }
 
 // Admin: clear scores for a single round (keeps the round + holes + teams)
@@ -607,7 +633,10 @@ export async function getLeaderboardData() {
         const hole = holesMap[`${s.round_id}_${s.hole_number}`];
         if (!hole) continue;
         const hcStrokes = handicapStrokes[s.hole_number] || 0;
-        roundTotal += calcStablefordPoints(s.strokes, hole.par, hcStrokes);
+        let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes);
+        // 🎭 Joker Hole: double points on the admin-designated hole for this round
+        if (r.joker_hole && s.hole_number === r.joker_hole) pts *= 2;
+        roundTotal += pts;
       }
       if (pScores.length > 0) playerRoundTotals[p.id][r.id] = roundTotal;
     }
@@ -655,7 +684,9 @@ export async function getTeamLeaderboardData() {
     const ch = calcCourseHandicap(player.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
     const holes = roundHolesMap[s.round_id] || [];
     const hcStrokes = distributeHandicapStrokes(ch, holes);
-    const pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
+    let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
+    // 🎭 Joker Hole doubles points (team leaderboard uses same hole-level points)
+    if (round.joker_hole && s.hole_number === round.joker_hole) pts *= 2;
     stabMap[`${s.round_id}_${s.player_id}_${s.hole_number}`] = pts;
   }
 
@@ -742,7 +773,8 @@ export async function getPlayerStats() {
         const ch = calcCourseHandicap(p.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
         const holes = roundHolesMap[s.round_id] || [];
         const hcStrokes = distributeHandicapStrokes(ch, holes);
-        const pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
+        let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
+        if (round.joker_hole && s.hole_number === round.joker_hole) pts *= 2;
         if (!roundTotals[s.round_id]) roundTotals[s.round_id] = 0;
         roundTotals[s.round_id] += pts;
       }
@@ -769,6 +801,234 @@ export async function getPlayerStats() {
   stats.sort((a, b) => b.total_points - a.total_points);
   assignTiedRanks(stats, 'total_points');
   return stats;
+}
+
+// ===== FUN AWARDS =====
+// Computes per-round awards grouped by round/course, plus season summaries.
+export async function getAwards() {
+  const [players, rounds, scoresRes, exclusionsRes] = await Promise.all([
+    getPlayers(),
+    getSetUpRounds(),
+    withTimeout(supabase.from('scores').select('round_id, player_id, hole_number, strokes'), 15000, 'scores-awards'),
+    withTimeout(supabase.from('round_exclusions').select('round_id, player_id'), 10000, 'exclusions'),
+  ]);
+  const allScores = scoresRes.data || [];
+  // Map of roundId -> Set of excluded playerIds
+  const excludedByRound = {};
+  for (const e of (exclusionsRes.data || [])) {
+    if (!excludedByRound[e.round_id]) excludedByRound[e.round_id] = new Set();
+    excludedByRound[e.round_id].add(e.player_id);
+  }
+  const { holesMap, roundHolesMap } = await fetchHolesForRounds(rounds);
+  const nameById = Object.fromEntries(players.map(p => [p.id, p.name]));
+
+  // Per-player, per-round Stableford totals and splits
+  const perPR = {};
+  for (const p of players) {
+    perPR[p.id] = {};
+    for (const r of rounds) {
+      const holes = (roundHolesMap[r.id] || []).slice().sort((a, b) => a.hole_number - b.hole_number);
+      if (holes.length === 0) continue;
+      const ch = calcCourseHandicap(p.handicap, r.courses?.slope, r.courses?.rating, r.courses?.par);
+      const hcStrokes = distributeHandicapStrokes(ch, holes);
+      const pScores = allScores.filter(s => s.player_id === p.id && s.round_id === r.id);
+      if (pScores.length === 0) continue;
+
+      let total = 0, front = 0, back = 0, first3 = 0, last3 = 0;
+      const totalHoles = holes.length;
+      for (const s of pScores) {
+        const h = holesMap[`${r.id}_${s.hole_number}`];
+        if (!h) continue;
+        let pts = calcStablefordPoints(s.strokes, h.par, hcStrokes[s.hole_number] || 0);
+        if (r.joker_hole && s.hole_number === r.joker_hole) pts *= 2;
+        total += pts;
+        if (s.hole_number <= 9) front += pts; else back += pts;
+        if (s.hole_number <= 3) first3 += pts;
+        if (s.hole_number > totalHoles - 3) last3 += pts;
+      }
+      perPR[p.id][r.id] = { total, front, back, first3, last3 };
+    }
+  }
+
+  // ===== PER-ROUND AWARDS =====
+  // For each round, compute each award winner
+  const perRoundAwards = [];
+  for (const r of rounds) {
+    const excludedSet = excludedByRound[r.id] || new Set();
+    const entrants = players
+      .filter(p => !excludedSet.has(p.id))
+      .map(p => ({ playerId: p.id, name: p.name, ...perPR[p.id]?.[r.id] }))
+      .filter(e => e.total != null);
+    if (entrants.length === 0) {
+      perRoundAwards.push({
+        round_number: r.round_number,
+        course: r.courses?.name || `Round ${r.round_number}`,
+        beer_hole: r.beer_hole,
+        joker_hole: r.joker_hole,
+        has_scores: false,
+      });
+      continue;
+    }
+
+    // 🥄 Wooden Spoon — worst total
+    const spoon = [...entrants].sort((a, b) => a.total - b.total)[0];
+    // 🧊 Freeze — biggest front→back drop (positive = collapse)
+    const freeze = [...entrants].sort((a, b) => (b.front - b.back) - (a.front - a.back))[0];
+    // 🔥 Heater — biggest back→front improvement
+    const heater = [...entrants].sort((a, b) => (b.back - b.front) - (a.back - a.front))[0];
+    // 🐢 Slow Starter — worst first 3 holes
+    const slow = [...entrants].sort((a, b) => a.first3 - b.first3)[0];
+    // 🎯 Clutch King — best last 3 holes
+    const clutch = [...entrants].sort((a, b) => b.last3 - a.last3)[0];
+
+    // 🍺 Beer Hole — worst strokes on the designated beer hole (everyone tied is liable)
+    let beer = null;
+    if (r.beer_hole) {
+      const scoresOnHole = allScores.filter(s => s.round_id === r.id && s.hole_number === r.beer_hole && !excludedSet.has(s.player_id));
+      if (scoresOnHole.length > 0) {
+        const worstStrokes = Math.max(...scoresOnHole.map(s => s.strokes));
+        const tied = scoresOnHole.filter(s => s.strokes === worstStrokes).map(s => nameById[s.player_id] || '?');
+        beer = { names: tied, strokes: worstStrokes, tied: tied.length > 1 };
+      }
+    }
+
+    // 🎭 Joker Hole — most bonus points earned (base stableford points on joker hole)
+    let joker = null;
+    if (r.joker_hole) {
+      const holesForRound = roundHolesMap[r.id] || [];
+      const hole = holesForRound.find(h => h.hole_number === r.joker_hole);
+      if (hole) {
+        const jokerScores = allScores.filter(s => s.round_id === r.id && s.hole_number === r.joker_hole && !excludedSet.has(s.player_id));
+        let best = null;
+        for (const s of jokerScores) {
+          const player = players.find(p => p.id === s.player_id);
+          if (!player) continue;
+          const ch = calcCourseHandicap(player.handicap, r.courses?.slope, r.courses?.rating, r.courses?.par);
+          const hcMap = distributeHandicapStrokes(ch, holesForRound);
+          const basePts = calcStablefordPoints(s.strokes, hole.par, hcMap[s.hole_number] || 0);
+          if (!best || basePts > best.bonus) best = { name: nameById[s.player_id] || '?', bonus: basePts };
+        }
+        joker = best;
+      }
+    }
+
+    perRoundAwards.push({
+      round_number: r.round_number,
+      course: r.courses?.name || `Round ${r.round_number}`,
+      beer_hole: r.beer_hole,
+      joker_hole: r.joker_hole,
+      has_scores: true,
+      excluded: [...(excludedByRound[r.id] || [])].map(id => nameById[id] || '?'),
+      wooden_spoon: { player: spoon.name, points: spoon.total },
+      freeze: { player: freeze.name, drop: freeze.front - freeze.back },
+      heater: { player: heater.name, gain: heater.back - heater.front },
+      slow_starter: { player: slow.name, points: slow.first3 },
+      clutch_king: { player: clutch.name, points: clutch.last3 },
+      beer_hole_winner: beer,
+      joker_hole_winner: joker,
+    });
+  }
+
+  // ===== SEASON SUMMARIES =====
+  // Wooden Spoon season tally (excluded players can't win the spoon for a round they sat out)
+  const spoonCounts = {};
+  const spoonHistory = [];
+  for (const r of rounds) {
+    const excludedSet = excludedByRound[r.id] || new Set();
+    let worst = null;
+    for (const p of players) {
+      if (excludedSet.has(p.id)) continue;
+      const d = perPR[p.id]?.[r.id];
+      if (!d) continue;
+      if (!worst || d.total < worst.total) worst = { playerId: p.id, total: d.total, roundId: r.id };
+    }
+    if (worst) {
+      spoonCounts[worst.playerId] = (spoonCounts[worst.playerId] || 0) + 1;
+      spoonHistory.push({ ...worst, name: nameById[worst.playerId], round_number: r.round_number, course: r.courses?.name || `R${r.round_number}` });
+    }
+  }
+  const spoonList = Object.entries(spoonCounts)
+    .map(([pid, count]) => ({ player: nameById[+pid] || 'Unknown', count }))
+    .sort((a, b) => b.count - a.count);
+  let longestStreak = { player: '', streak: 0 };
+  let currentStreak = { playerId: null, len: 0 };
+  for (const h of spoonHistory) {
+    if (h.playerId === currentStreak.playerId) currentStreak.len++;
+    else currentStreak = { playerId: h.playerId, len: 1 };
+    if (currentStreak.len > longestStreak.streak) {
+      longestStreak = { player: nameById[currentStreak.playerId] || '-', streak: currentStreak.len };
+    }
+  }
+
+  // Season-wide beer-hole tally: how many times each player bought drinks (ties all count)
+  const beerTally = {};
+  for (const r of rounds) {
+    if (!r.beer_hole) continue;
+    const excludedSet = excludedByRound[r.id] || new Set();
+    const scoresOnHole = allScores.filter(s => s.round_id === r.id && s.hole_number === r.beer_hole && !excludedSet.has(s.player_id));
+    if (scoresOnHole.length === 0) continue;
+    const worstStrokes = Math.max(...scoresOnHole.map(s => s.strokes));
+    for (const s of scoresOnHole) {
+      if (s.strokes === worstStrokes) beerTally[s.player_id] = (beerTally[s.player_id] || 0) + 1;
+    }
+  }
+  const beerList = Object.entries(beerTally)
+    .map(([pid, count]) => ({ player: nameById[+pid] || '?', count }))
+    .sort((a, b) => b.count - a.count);
+
+  // ===== SEASON-WIDE JOKER HOLE =====
+  // Track best joker hole bonus across ALL rounds — "king of the joker"
+  const jokerBestBonus = {}; // playerId -> best base points earned on any joker hole
+  for (const r of rounds) {
+    if (!r.joker_hole) continue;
+    const excludedSet = excludedByRound[r.id] || new Set();
+    const holesForRound = roundHolesMap[r.id] || [];
+    const hole = holesForRound.find(h => h.hole_number === r.joker_hole);
+    if (!hole) continue;
+    const jokerScores = allScores.filter(s => s.round_id === r.id && s.hole_number === r.joker_hole && !excludedSet.has(s.player_id));
+    for (const s of jokerScores) {
+      const player = players.find(p => p.id === s.player_id);
+      if (!player) continue;
+      const ch = calcCourseHandicap(player.handicap, r.courses?.slope, r.courses?.rating, r.courses?.par);
+      const hcMap = distributeHandicapStrokes(ch, holesForRound);
+      const basePts = calcStablefordPoints(s.strokes, hole.par, hcMap[s.hole_number] || 0);
+      if (!jokerBestBonus[s.player_id] || basePts > jokerBestBonus[s.player_id].bonus) {
+        jokerBestBonus[s.player_id] = {
+          bonus: basePts,
+          round: r.round_number,
+          course: r.courses?.name || `R${r.round_number}`,
+          hole: r.joker_hole,
+        };
+      }
+    }
+  }
+  const jokerKing = Object.entries(jokerBestBonus)
+    .map(([pid, d]) => ({ player: nameById[+pid] || '?', ...d }))
+    .sort((a, b) => b.bonus - a.bonus)[0] || null;
+
+  // Season completion (honouring exclusions)
+  const activePlayerCount = players.length;
+  let roundsComplete = 0;
+  for (const r of rounds) {
+    const excluded = excludedByRound[r.id] || new Set();
+    const expectedCount = activePlayerCount - excluded.size;
+    const playersWithScores = new Set(allScores.filter(s => s.round_id === r.id).map(s => s.player_id));
+    if (expectedCount > 0 && playersWithScores.size >= expectedCount) roundsComplete++;
+  }
+  const seasonComplete = rounds.length > 0 && roundsComplete === rounds.length;
+
+  return {
+    season_complete: seasonComplete,
+    rounds_complete: roundsComplete,
+    total_rounds: rounds.length,
+    active_players: activePlayerCount,
+    per_round: perRoundAwards,
+    season: {
+      wooden_spoon_leader: spoonList[0] || { player: '-', count: 0 },
+      longest_streak: longestStreak,
+      joker_king: jokerKing,
+    },
+  };
 }
 
 export async function getSeasonOverview() {
@@ -832,7 +1092,8 @@ export async function getStablefordRoundData(roundId) {
     if (!hole) continue;
     const ch = calcCourseHandicap(s.players.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
     const hcStrokes = distributeHandicapStrokes(ch, holes);
-    const pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
+    let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
+    if (round.joker_hole && s.hole_number === round.joker_hole) pts *= 2;
     stabMap[`${s.players.name}_${s.hole_number}`] = pts;
   }
 

@@ -5,6 +5,7 @@ import { Trophy, ChartLine, ArrowsClockwise, User, Target, Flag, Fire, TrendUp, 
 import * as db from './services/supabaseService';
 import AdminPanel from './components/AdminPanel';
 import SeasonWizard from './components/SeasonWizard';
+import Awards from './components/Awards';
 
 const REFRESH_INTERVAL = 5 * 60 * 1000;
 
@@ -275,16 +276,64 @@ const ScoreEntry = ({rounds, players, userId}) => {
             <h3 className="text-sm text-white"><span className="text-[#D4AF37] font-bold">{players.find(p=>p.id===parseInt(selectedPlayer))?.name}</span></h3>
             <div className="text-xs text-[#A9C5B4]">{filled}/{holes.length} holes &middot; Total: <span className={`font-bold ${totalScore-totalPar<0?'text-emerald-400':totalScore-totalPar>0?'text-orange-400':'text-white'}`}>{totalScore||'-'}</span>{totalScore>0&&<span className="ml-1">({totalScore-totalPar>=0?'+':''}{totalScore-totalPar})</span>}</div>
           </div>
-          {[{label:'Front 9',slice:[0,9]},{label:'Back 9',slice:[9,18]}].map(({label,slice})=>(
-            <div key={label} className="p-4"><p className="text-xs text-[#A9C5B4] uppercase tracking-wider mb-3">{label}</p><div className="grid grid-cols-9 gap-2">
-              {holes.slice(...slice).map(h=>(<div key={h.hole_number} className="text-center"><div className="text-[10px] text-[#A9C5B4] mb-1">H{h.hole_number}</div><div className="text-[10px] text-[#D4AF37]/60 mb-1">P{h.par}</div>
-                <input type="number" min="1" max="15" value={scores[h.hole_number]??''} onChange={e=>updateScore(h.hole_number,e.target.value)} className={`w-full h-10 text-center rounded-lg border text-sm font-bold focus:outline-none focus:ring-1 focus:ring-[#D4AF37] ${scores[h.hole_number]!=null&&scores[h.hole_number]!==''?scores[h.hole_number]<h.par?'bg-emerald-900/40 border-emerald-500/40 text-emerald-300':scores[h.hole_number]===h.par?'bg-[#051A10] border-[#D4AF37]/30 text-white':'bg-orange-900/30 border-orange-500/40 text-orange-300':'bg-[#051A10] border-[#D4AF37]/15 text-white'}`}/>
-              </div>))}
-            </div></div>
-          ))}
-          <div className="p-4 border-t border-[#D4AF37]/10 flex items-center justify-between">
-            {msg&&<p className={`text-xs ${msg.includes('Error')?'text-red-400':'text-emerald-400'}`}>{msg}</p>}
-            <button onClick={handleSave} disabled={saving||filled===0} className="flex items-center gap-2 px-6 py-2.5 bg-[#D4AF37] text-[#051A10] font-bold text-sm rounded-lg hover:bg-[#F1D67E] transition-colors disabled:opacity-40 ml-auto">
+          {/* Mobile: stepper layout — 2 holes per row with big +/- buttons */}
+          <div className="sm:hidden p-3 space-y-2">
+            {[{label:'Front 9',slice:[0,9]},{label:'Back 9',slice:[9,18]}].map(({label,slice})=>(
+              <div key={label}>
+                <p className="text-[11px] text-[#A9C5B4] uppercase tracking-wider mt-3 mb-2 px-1">{label}</p>
+                {holes.slice(...slice).map(h=>{
+                  const v = scores[h.hole_number];
+                  const hasV = v!=null&&v!=='';
+                  const diff = hasV ? v - h.par : 0;
+                  const tone = !hasV ? 'bg-[#051A10] border-[#D4AF37]/15 text-white' : diff<0 ? 'bg-emerald-900/40 border-emerald-500/40 text-emerald-300' : diff===0 ? 'bg-[#051A10] border-[#D4AF37]/30 text-white' : 'bg-orange-900/30 border-orange-500/40 text-orange-300';
+                  return (
+                    <div key={h.hole_number} className="flex items-center gap-2 py-1">
+                      <div className="flex-1 flex items-center gap-2">
+                        <span className="text-sm font-bold text-[#D4AF37] w-10">H{h.hole_number}</span>
+                        <span className="text-[11px] text-[#A9C5B4]">Par {h.par}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={()=>updateScore(h.hole_number, Math.max(1, (parseInt(v)||h.par)-1))}
+                        className="w-11 h-11 rounded-lg bg-[#051A10] border border-[#D4AF37]/30 text-[#D4AF37] text-xl font-bold active:bg-[#D4AF37]/20 disabled:opacity-40 flex items-center justify-center"
+                        disabled={hasV && v<=1}
+                        aria-label={`Decrement hole ${h.hole_number}`}
+                        data-testid={`hole-${h.hole_number}-minus`}
+                      >−</button>
+                      <button
+                        type="button"
+                        onClick={()=>updateScore(h.hole_number, hasV ? v : h.par)}
+                        className={`w-14 h-11 rounded-lg border text-lg font-bold ${tone}`}
+                        data-testid={`hole-${h.hole_number}-value`}
+                      >
+                        {hasV ? v : '-'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={()=>updateScore(h.hole_number, Math.min(15, (parseInt(v)||h.par)+1))}
+                        className="w-11 h-11 rounded-lg bg-[#051A10] border border-[#D4AF37]/30 text-[#D4AF37] text-xl font-bold active:bg-[#D4AF37]/20 flex items-center justify-center"
+                        aria-label={`Increment hole ${h.hole_number}`}
+                        data-testid={`hole-${h.hole_number}-plus`}
+                      >+</button>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          {/* Desktop/tablet: keyboard-friendly grid */}
+          <div className="hidden sm:block">
+            {[{label:'Front 9',slice:[0,9]},{label:'Back 9',slice:[9,18]}].map(({label,slice})=>(
+              <div key={label} className="p-4"><p className="text-xs text-[#A9C5B4] uppercase tracking-wider mb-3">{label}</p><div className="grid grid-cols-9 gap-2">
+                {holes.slice(...slice).map(h=>(<div key={h.hole_number} className="text-center"><div className="text-[10px] text-[#A9C5B4] mb-1">H{h.hole_number}</div><div className="text-[10px] text-[#D4AF37]/60 mb-1">P{h.par}</div>
+                  <input type="number" inputMode="numeric" min="1" max="15" value={scores[h.hole_number]??''} onChange={e=>updateScore(h.hole_number,e.target.value)} className={`w-full h-10 text-center rounded-lg border text-sm font-bold focus:outline-none focus:ring-1 focus:ring-[#D4AF37] ${scores[h.hole_number]!=null&&scores[h.hole_number]!==''?scores[h.hole_number]<h.par?'bg-emerald-900/40 border-emerald-500/40 text-emerald-300':scores[h.hole_number]===h.par?'bg-[#051A10] border-[#D4AF37]/30 text-white':'bg-orange-900/30 border-orange-500/40 text-orange-300':'bg-[#051A10] border-[#D4AF37]/15 text-white'}`}/>
+                </div>))}
+              </div></div>
+            ))}
+          </div>
+          <div className="p-4 border-t border-[#D4AF37]/10 flex items-center justify-between gap-3">
+            {msg&&<p className={`text-xs flex-1 ${msg.includes('Error')?'text-red-400':'text-emerald-400'}`}>{msg}</p>}
+            <button onClick={handleSave} disabled={saving||filled===0} className="flex items-center gap-2 px-6 py-2.5 bg-[#D4AF37] text-[#051A10] font-bold text-sm rounded-lg hover:bg-[#F1D67E] transition-colors disabled:opacity-40 ml-auto" data-testid="save-scores-btn">
               <CloudArrowUp size={16} weight="bold"/> {saving?'Saving...':'Save Scores'}
             </button>
           </div>
@@ -310,6 +359,7 @@ function App() {
   const [leaderboard, setLeaderboard] = useState(null);
   const [teamLb, setTeamLb] = useState(null);
   const [playerStats, setPlayerStats] = useState(null);
+  const [awards, setAwards] = useState(null);
   const [sheetData, setSheetData] = useState(null);
   const [rounds, setRounds] = useState([]);
   const [players, setPlayers] = useState([]);
@@ -364,6 +414,7 @@ function App() {
       else if (v === 'league_lb') { setLeaderboard(await db.getLeaderboardData()); }
       else if (v === 'team_lb') { setTeamLb(await db.getTeamLeaderboardData()); }
       else if (v === 'stats') { setPlayerStats(await db.getPlayerStats()); }
+      else if (v === 'awards') { setAwards(await db.getAwards()); }
       else if (v === 'stableford' && param) { setSheetData(await db.getStablefordRoundData(param)); }
       else if (v === 'teams' && param) { setSheetData(await db.getTeamRoundData(param)); }
       setLastUpdated(new Date().toISOString());
@@ -436,6 +487,7 @@ function App() {
               {stabItems.length>0&&<NavDropdown label="Stableford" icon={<ChartLine size={18} weight="duotone"/>} items={stabItems} activeId={view==='stableford'?viewParam:null} onSelect={id=>navigate('stableford',id)} testId="nav-stab"/>}
               {teamItems.length>0&&<NavDropdown label="Team Rounds" icon={<UsersThree size={18} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-teams"/>}
               <button onClick={()=>navigate('stats')} className={`flex items-center gap-2 px-5 py-3 text-sm font-sans rounded-lg whitespace-nowrap transition-all ${view==='stats'?'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30':'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`}><User size={18} weight="duotone"/><span>Player Stats</span></button>
+              <button onClick={()=>navigate('awards')} className={`flex items-center gap-2 px-5 py-3 text-sm font-sans rounded-lg whitespace-nowrap transition-all ${view==='awards'?'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30':'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`} data-testid="nav-awards"><Trophy size={18} weight="duotone"/><span>Awards</span></button>
               {canScore&&<button onClick={()=>navigate('score_entry')} className={`flex items-center gap-2 px-5 py-3 text-sm font-sans rounded-lg whitespace-nowrap transition-all ${view==='score_entry'?'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30':'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`} data-testid="nav-scores"><PencilSimple size={18} weight="duotone"/><span>Scores</span></button>}
               {isAdmin&&<button onClick={()=>navigate('season_wizard')} className={`flex items-center gap-2 px-5 py-3 text-sm font-sans rounded-lg whitespace-nowrap transition-all ${view==='season_wizard'?'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30':'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`} data-testid="nav-season-wizard"><Flag size={18} weight="duotone"/><span>Season Setup</span></button>}
               {isAdmin&&<button onClick={()=>navigate('admin')} className={`flex items-center gap-2 px-5 py-3 text-sm font-sans rounded-lg whitespace-nowrap transition-all ${view==='admin'?'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30':'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`}><Gear size={18} weight="duotone"/><span>Admin</span></button>}
@@ -453,6 +505,10 @@ function App() {
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                   {playerStats.map((p,i)=><PlayerCard key={p.name} player={p} index={i}/>)}
                 </div>
+              </motion.div>
+            ) : view==='awards'&&awards ? (
+              <motion.div key="awards" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
+                <Awards awards={awards}/>
               </motion.div>
             ) : (view==='league_lb'||view==='team_lb')&&(leaderboard||teamLb) ? (
               <motion.div key={view} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>

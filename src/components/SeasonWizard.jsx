@@ -116,6 +116,14 @@ export default function SeasonWizard({ onComplete }) {
     finally { setSaving(false); }
   };
 
+  const updateRoundSpecial = async (roundId, field, value) => {
+    const val = value === '' ? null : parseInt(value);
+    try {
+      await db.updateRound(roundId, { [field]: val });
+      setRounds(prev => prev.map(r => r.id === roundId ? { ...r, [field]: val } : r));
+    } catch (e) { setMsg(e.message); }
+  };
+
   // === TEAMS (season-wide) ===
   const addTeam = async () => {
     if (!newTeam.player1 || !newTeam.player2) return;
@@ -251,12 +259,30 @@ export default function SeasonWizard({ onComplete }) {
             <p className="text-xs text-[#A9C5B4]/70 italic mb-4">Each round uses the holes you configured on its course — you don't need to set them again here.</p>
             <div className="space-y-2 mb-4">
               {setupRounds.map(r => (
-                <div key={r.id} className="py-2.5 px-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10 text-sm flex items-center justify-between">
-                  <div>
-                    <span className="text-white font-semibold">Round {r.round_number}</span>
-                    <span className="text-[#A9C5B4] text-xs ml-2">{r.courses?.name}</span>
+                <div key={r.id} className="py-2.5 px-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10 text-sm">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <span className="text-white font-semibold">Round {r.round_number}</span>
+                      <span className="text-[#A9C5B4] text-xs ml-2">{r.courses?.name}</span>
+                    </div>
+                    <span className="text-[10px] uppercase tracking-wider text-emerald-400 hidden sm:inline">Holes from course</span>
                   </div>
-                  <span className="text-[10px] uppercase tracking-wider text-emerald-400">Holes from course</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-rose-300 uppercase tracking-wider block mb-1">🍺 Beer Hole</label>
+                      <select value={r.beer_hole || ''} onChange={e => updateRoundSpecial(r.id, 'beer_hole', e.target.value)} className="w-full px-2 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs focus:outline-none">
+                        <option value="">None</option>
+                        {Array.from({length:18},(_,i)=>i+1).map(h => <option key={h} value={h}>Hole {h}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-purple-300 uppercase tracking-wider block mb-1">🎭 Joker Hole</label>
+                      <select value={r.joker_hole || ''} onChange={e => updateRoundSpecial(r.id, 'joker_hole', e.target.value)} className="w-full px-2 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs focus:outline-none">
+                        <option value="">None</option>
+                        {Array.from({length:18},(_,i)=>i+1).map(h => <option key={h} value={h}>Hole {h}</option>)}
+                      </select>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

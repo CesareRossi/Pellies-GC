@@ -275,26 +275,94 @@ const CoursesPanel = () => {
 const RoundsPanel = () => {
   const [rounds, setRounds] = useState([]);
   const [courses, setCourses] = useState([]);
+  const [players, setPlayers] = useState([]);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ round_number: null, course_id: null });
+  const [form, setForm] = useState({ round_number: null, course_id: null, beer_hole: null, joker_hole: null });
+  // Set of player IDs who did NOT compete in the round being edited
+  const [excluded, setExcluded] = useState(new Set());
+  // Snapshot of exclusions when the edit modal opened — used to diff on save
+  const [excludedInitial, setExcludedInitial] = useState(new Set());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   // Confirmations
   const [confirmDel, setConfirmDel] = useState(null); // round to delete
   const [confirmClear, setConfirmClear] = useState(null); // round to clear scores
   const [actionMsg, setActionMsg] = useState('');
+  const [allExclusions, setAllExclusions] = useState([]);
 
   useEffect(() => { load(); }, []);
-  const load = async () => { setRounds(await db.getRounds()); setCourses(await db.getCourses()); };
+  const load = async () => {
+    setRounds(await db.getRounds());
+    setCourses(await db.getCourses());
+    setPlayers(await db.getPlayers());
+    try { setAllExclusions(await db.getAllRoundExclusions()); } catch { /* ignore */ }
+  };
+
+  const openEdit = async (round) => {
+    setEditing(round.id);
+    setForm({
+      round_number: round.round_number,
+      course_id: round.course_id,
+      beer_hole: round.beer_hole,
+      joker_hole: round.joker_hole,
+    });
+    setError('');
+    try {
+      const ids = await db.getRoundExclusions(round.id);
+      const s = new Set(ids);
+      setExcluded(s);
+      setExcludedInitial(new Set(s));
+    } catch {
+      setExcluded(new Set());
+      setExcludedInitial(new Set());
+    }
+  };
+
+  const openNew = () => {
+    setEditing('new');
+    setForm({ round_number: rounds.length + 1, course_id: null, beer_hole: null, joker_hole: null });
+    setExcluded(new Set());
+    setExcludedInitial(new Set());
+    setError('');
+  };
+
+  const togglePlayerExcluded = (playerId) => {
+    setExcluded(prev => {
+      const next = new Set(prev);
+      if (next.has(playerId)) next.delete(playerId); else next.add(playerId);
+      return next;
+    });
+  };
 
   const save = async () => {
     if (!form.round_number) return;
     setSaving(true); setError('');
     try {
       // A round is fully set up once it has a course (holes live on the course)
-      const data = { round_number: parseInt(form.round_number), course_id: form.course_id ? parseInt(form.course_id) : null, is_setup: !!form.course_id };
-      if (editing === 'new') await db.createRound(data);
-      else await db.updateRound(editing, data);
+      const data = {
+        round_number: parseInt(form.round_number),
+        course_id: form.course_id ? parseInt(form.course_id) : null,
+        beer_hole: form.beer_hole ? parseInt(form.beer_hole) : null,
+        joker_hole: form.joker_hole ? parseInt(form.joker_hole) : null,
+        is_setup: !!form.course_id,
+      };
+      let roundId;
+      if (editing === 'new') {
+        const created = await db.createRound(data);
+        roundId = created?.id;
+      } else {
+        await db.updateRound(editing, data);
+        roundId = editing;
+      }
+      // Persist exclusion diff
+      if (roundId) {
+        const toAdd = [...excluded].filter(id => !excludedInitial.has(id));
+        const toRemove = [...excludedInitial].filter(id => !excluded.has(id));
+        await Promise.all([
+          ...toAdd.map(id => db.setPlayerExcluded(roundId, id, true)),
+          ...toRemove.map(id => db.setPlayerExcluded(roundId, id, false)),
+        ]);
+      }
       setEditing(null); await load();
     } catch (e) { setError(e.message); } finally { setSaving(false); }
   };
@@ -323,28 +391,94 @@ const RoundsPanel = () => {
     <div>
       <div className="flex items-center gap-3 mb-5">
         <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider flex-1">Rounds ({rounds.length})</h3>
-        <button onClick={() => { setEditing('new'); setForm({ round_number: rounds.length + 1, course_id: null }); setError(''); }} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30 rounded-lg hover:bg-[#D4AF37]/30"><Plus size={14} /> Add</button>
+        <button onClick={openNew} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30 rounded-lg hover:bg-[#D4AF37]/30"><Plus size={14} /> Add</button>
       </div>
       {actionMsg && <div className={`mb-4 py-2 px-3 rounded-lg text-xs ${actionMsg.includes('Error') ? 'bg-red-900/30 text-red-400 border border-red-500/30' : 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/30'}`} data-testid="rounds-action-msg">{actionMsg}</div>}
-      <div className="space-y-2">{rounds.map(r => (
+      <div className="space-y-2">{rounds.map(r => {
+        const exCount = allExclusions.filter(e => e.round_id === r.id).length;
+        return (
         <div key={r.id} className="flex items-center justify-between py-2.5 px-4 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10">
-          <div><p className="text-white text-sm font-semibold">Round {r.round_number}</p><p className="text-[#A9C5B4] text-xs">{r.courses ? r.courses.name : 'No course'} {r.is_setup ? '' : '(not set up)'}</p></div>
+          <div className="min-w-0 flex-1"><p className="text-white text-sm font-semibold">Round {r.round_number}</p><p className="text-[#A9C5B4] text-xs truncate">{r.courses ? r.courses.name : 'No course'} {r.is_setup ? '' : '(not set up)'}
+            {r.beer_hole && <span className="ml-2 text-rose-300">🍺 H{r.beer_hole}</span>}
+            {r.joker_hole && <span className="ml-2 text-purple-300">🎭 H{r.joker_hole}</span>}
+            {exCount > 0 && <span className="ml-2 text-amber-300">✕ {exCount} out</span>}
+          </p></div>
           <div className="flex gap-2 items-center">
-            <button onClick={() => { setEditing(r.id); setForm({ round_number: r.round_number, course_id: r.course_id }); setError(''); }} className="text-[#A9C5B4] hover:text-[#D4AF37]" data-testid={`round-edit-${r.id}`}><PencilSimple size={16} /></button>
+            <button onClick={() => openEdit(r)} className="text-[#A9C5B4] hover:text-[#D4AF37]" data-testid={`round-edit-${r.id}`}><PencilSimple size={16} /></button>
             <button onClick={() => setConfirmClear(r)} title="Clear scores for this round" className="text-[#A9C5B4] hover:text-amber-400" data-testid={`round-clear-${r.id}`}><Warning size={16} /></button>
             <button onClick={() => setConfirmDel(r)} title="Delete this round" className="text-[#A9C5B4] hover:text-red-400" data-testid={`round-delete-${r.id}`}><Trash size={16} /></button>
           </div>
         </div>
-      ))}</div>
+        );
+      })}</div>
 
       {/* Round Edit Modal */}
       <AnimatePresence>{editing && (
-        <Modal title={editing === 'new' ? 'Add Round' : 'Edit Round'} onClose={() => setEditing(null)}
+        <Modal title={editing === 'new' ? 'Add Round' : 'Edit Round'} onClose={() => setEditing(null)} wide
           footer={<SaveBtn onClick={save} loading={saving} />}>
           <div className="space-y-4">
             <Field label="Round Number" type="number" value={form.round_number} onChange={v => setForm(f => ({ ...f, round_number: v }))} placeholder="e.g. 6" required />
             <SelectField label="Course" value={form.course_id} onChange={v => setForm(f => ({ ...f, course_id: v || null }))} placeholder="Select course..." options={courses.map(c => ({ value: c.id, label: `${c.name} (Par ${c.par})` }))} />
-            <p className="text-xs text-[#A9C5B4]/70 italic">Hole par &amp; stroke-index are set on the course itself (Courses tab → Holes).</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-1">🍺 Beer Hole</label>
+                <select
+                  value={form.beer_hole ?? ''}
+                  onChange={e => setForm(f => ({ ...f, beer_hole: e.target.value ? parseInt(e.target.value) : null }))}
+                  className="w-full px-4 py-2.5 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white focus:border-[#D4AF37]/50 focus:outline-none text-sm"
+                  data-testid="round-beer-hole-select"
+                >
+                  <option value="">— Disabled (no beer hole) —</option>
+                  {Array.from({length:18},(_,i)=>i+1).map(h => <option key={h} value={h}>Hole {h}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-1">🎭 Joker Hole</label>
+                <select
+                  value={form.joker_hole ?? ''}
+                  onChange={e => setForm(f => ({ ...f, joker_hole: e.target.value ? parseInt(e.target.value) : null }))}
+                  className="w-full px-4 py-2.5 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white focus:border-[#D4AF37]/50 focus:outline-none text-sm"
+                  data-testid="round-joker-hole-select"
+                >
+                  <option value="">— Disabled (no joker hole) —</option>
+                  {Array.from({length:18},(_,i)=>i+1).map(h => <option key={h} value={h}>Hole {h}</option>)}
+                </select>
+              </div>
+            </div>
+            <p className="text-[11px] text-[#A9C5B4]/70 italic leading-relaxed">🍺 Beer Hole: worst score on this hole buys drinks (ties = all liable). 🎭 Joker Hole: stableford points on this hole count double. Leave either on <span className="text-[#D4AF37]">Disabled</span> to skip it for this round.</p>
+
+            {/* Excluded players */}
+            {editing !== 'new' && (
+              <div>
+                <label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Didn't play this round</label>
+                <p className="text-[11px] text-[#A9C5B4]/70 italic leading-relaxed mb-2">
+                  Tap anyone who sat this round out. They're excluded from individual awards &amp; the season-complete gate, but their partner's score still counts for the team.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                  {players.map(p => {
+                    const isOut = excluded.has(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => togglePlayerExcluded(p.id)}
+                        className={`text-left px-2.5 py-1.5 rounded-md border text-xs transition-colors ${isOut ? 'bg-amber-500/15 border-amber-500/40 text-amber-200' : 'bg-[#051A10]/60 border-[#D4AF37]/15 text-[#A9C5B4] hover:border-[#D4AF37]/30'}`}
+                        data-testid={`round-exclude-${p.id}`}
+                      >
+                        <span className="inline-block w-3 mr-1">{isOut ? '✕' : ''}</span>{p.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                {excluded.size > 0 && (
+                  <p className="text-[11px] text-amber-300 mt-2">{excluded.size} player{excluded.size === 1 ? '' : 's'} marked as not playing this round.</p>
+                )}
+              </div>
+            )}
+            {editing === 'new' && (
+              <p className="text-[11px] text-[#A9C5B4]/60 italic">Save the round first, then reopen it to mark anyone who didn't play.</p>
+            )}
+
             <ErrorMsg msg={error} />
           </div>
         </Modal>
@@ -480,19 +614,25 @@ const UsersPanel = () => {
       <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider mb-2">Users ({users.length})</h3>
       <p className="text-xs text-[#A9C5B4]/60 mb-5 italic">Note: newly registered users appear here after their first login. If a user doesn't show up, ask them to log in once.</p>
       <div className="space-y-2">{users.map(u => (
-        <div key={u.id} className="flex items-center justify-between py-3 px-4 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10" data-testid={`user-row-${u.id}`}>
-          <div className="flex items-center gap-3"><UserCircle size={28} className="text-[#A9C5B4]" /><div><p className="text-white text-sm font-semibold">{u.display_name || u.email?.split('@')[0]}</p><p className="text-[#A9C5B4] text-xs">{u.email}</p></div></div>
-          <div className="flex items-center gap-2">
+        <div key={u.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-3 px-4 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10 gap-3" data-testid={`user-row-${u.id}`}>
+          <div className="flex items-center gap-3 min-w-0">
+            <UserCircle size={28} className="text-[#A9C5B4] flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-white text-sm font-semibold truncate">{u.display_name || u.email?.split('@')[0]}</p>
+              <p className="text-[#A9C5B4] text-xs truncate">{u.email}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
             <span className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${rb(u.role)}`}>{ri(u.role)} {u.role}</span>
             {u.role !== 'admin' && (
               <>
-                <select value={u.role} onChange={e => updateRole(u.id, e.target.value)} className="bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs rounded px-2 py-1 focus:outline-none" data-testid={`user-role-${u.id}`}>
+                <select value={u.role} onChange={e => updateRole(u.id, e.target.value)} className="bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs rounded px-2 py-1 focus:outline-none flex-1 sm:flex-none" data-testid={`user-role-${u.id}`}>
                   <option value="pending">Pending</option>
                   <option value="approved">Approved</option>
                   <option value="admin">Admin</option>
                   <option value="rejected">Rejected (blocked)</option>
                 </select>
-                <button onClick={() => setConfirmRemove(u)} title="Remove user" className="text-[#A9C5B4] hover:text-red-400" data-testid={`user-remove-${u.id}`}><Trash size={16} /></button>
+                <button onClick={() => setConfirmRemove(u)} title="Remove user" className="text-[#A9C5B4] hover:text-red-400 flex-shrink-0" data-testid={`user-remove-${u.id}`}><Trash size={16} /></button>
               </>
             )}
           </div>
