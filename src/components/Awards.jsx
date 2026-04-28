@@ -17,6 +17,26 @@ function formatNames(names) {
   return names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1];
 }
 
+// Small helper — renders each tied player as its own chip so long lists
+// stay readable even with 4+ names on one beer hole.
+function NameChips({ names, color = 'rose' }) {
+  const colorMap = {
+    rose: 'bg-rose-500/15 border-rose-500/30 text-rose-100',
+    amber: 'bg-amber-500/15 border-amber-500/30 text-amber-100',
+  };
+  const cls = colorMap[color] || colorMap.rose;
+  if (!names || names.length === 0) return <span className="text-white/60">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1 mt-0.5">
+      {names.map((n, i) => (
+        <span key={`${n}-${i}`} className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold border ${cls}`}>
+          {n}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function DrinksWatch({ perRound }) {
   const beerRounds = perRound.filter(r => r.has_scores && r.beer_hole_winner);
   if (beerRounds.length === 0) return null;
@@ -34,21 +54,32 @@ function DrinksWatch({ perRound }) {
         </div>
       </div>
       <div className="space-y-1.5">
-        {beerRounds.map(r => (
-          <div key={r.round_number} className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-[#051A10]/40 border border-rose-500/10">
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-[#A9C5B4]/80 uppercase tracking-wider truncate">R{r.round_number} · {r.course}</p>
-              <p className="text-white text-sm font-semibold truncate">
-                {formatNames(r.beer_hole_winner.names)}
-                {r.beer_hole_winner.tied && <span className="ml-1.5 text-[10px] uppercase tracking-wider text-rose-300/80">(tied)</span>}
-              </p>
+        {beerRounds.map(r => {
+          const names = r.beer_hole_winner.names || [];
+          return (
+            <div key={r.round_number} className="flex items-start justify-between py-2 px-3 rounded-lg bg-[#051A10]/40 border border-rose-500/10">
+              <div className="min-w-0 flex-1 pr-3">
+                <p className="text-[10px] text-[#A9C5B4]/80 uppercase tracking-wider truncate">R{r.round_number} · {r.course}</p>
+                {names.length <= 1 ? (
+                  <p className="text-white text-sm font-semibold mt-0.5">
+                    {formatNames(names)}
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-[10px] uppercase tracking-wider text-rose-300/80 mt-1" data-testid={`drinks-tied-count-${r.round_number}`}>
+                      {names.length} tied — all liable
+                    </p>
+                    <NameChips names={names} />
+                  </>
+                )}
+              </div>
+              <div className="text-right flex-shrink-0 pt-0.5">
+                <p className="text-[10px] text-rose-300/70 uppercase">Hole {r.beer_hole}</p>
+                <p className="text-rose-300 text-sm font-bold">{r.beer_hole_winner.strokes}</p>
+              </div>
             </div>
-            <div className="text-right flex-shrink-0">
-              <p className="text-[10px] text-rose-300/70 uppercase">Hole {r.beer_hole}</p>
-              <p className="text-rose-300 text-sm font-bold">{r.beer_hole_winner.strokes}</p>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </motion.div>
   );
@@ -137,13 +168,12 @@ function RoundRow({ round, index, openDefault = false }) {
                     <p className="text-[10px] text-[#A9C5B4]">{t.detail(round[t.key])}</p>
                   </div>
                 ))}
-                {round.beer_hole_winner && (
+                {round.beer_hole_winner && !round.beer_hole_winner.tied && (
                   <div className="rounded-lg bg-rose-500/10 border border-rose-500/25 px-2.5 py-2">
                     <p className="text-[10px] text-rose-300 uppercase tracking-wider mb-0.5 flex items-center gap-1"><span>🍺</span><span>Beer Hole {round.beer_hole}</span></p>
                     <p className="text-white text-sm font-semibold truncate">{formatNames(round.beer_hole_winner.names)}</p>
                     <p className="text-[10px] text-rose-300/80">
-                      {round.beer_hole_winner.strokes} strokes
-                      {round.beer_hole_winner.tied ? ' · all liable!' : ' · buys drinks'}
+                      {round.beer_hole_winner.strokes} strokes · buys drinks
                     </p>
                   </div>
                 )}
@@ -155,6 +185,23 @@ function RoundRow({ round, index, openDefault = false }) {
                   </div>
                 )}
               </div>
+
+              {/* When the beer hole has multiple tied winners we give them
+                  their own full-width strip so every name is legible. */}
+              {round.beer_hole_winner && round.beer_hole_winner.tied && (
+                <div className="rounded-lg bg-rose-500/10 border border-rose-500/25 px-3 py-2.5 mt-2" data-testid={`beer-tie-${round.round_number}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] text-rose-300 uppercase tracking-wider flex items-center gap-1">
+                      <span>🍺</span>
+                      <span>Beer Hole {round.beer_hole} · {round.beer_hole_winner.strokes} strokes</span>
+                    </p>
+                    <p className="text-[10px] uppercase tracking-wider text-rose-200 font-semibold">
+                      {round.beer_hole_winner.names.length} tied — all liable
+                    </p>
+                  </div>
+                  <NameChips names={round.beer_hole_winner.names} />
+                </div>
+              )}
             </div>
           </motion.div>
         )}
