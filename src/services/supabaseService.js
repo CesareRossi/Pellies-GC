@@ -509,13 +509,7 @@ function calcCourseHandicap(handicapIndex, slopeRating, courseRating, par) {
 // Handicap strokes distributed by stroke index
 function calcStablefordPoints(strokes, par, handicapStrokes) {
   const netScore = strokes - handicapStrokes;
-  const diff = netScore - par;
-  if (diff <= -3) return 5; // Albatross or better
-  if (diff === -2) return 4; // Eagle
-  if (diff === -1) return 3; // Birdie
-  if (diff === 0) return 2;  // Par
-  if (diff === 1) return 1;  // Bogey
-  return 0; // Double bogey or worse
+  return Math.max(0, 2 + (par - netScore));
 }
 
 function distributeHandicapStrokes(courseHandicap, holes) {
@@ -539,7 +533,7 @@ function distributeHandicapStrokes(courseHandicap, holes) {
   while (remaining > 0 && pass < MAX_PASSES) {
     for (const hole of sortedBySI) {
       if (remaining <= 0) break;
-      strokesPerHole[hole.hole_number] = pass + 1;
+      strokesPerHole[hole.hole_number] += 1;
       remaining--;
     }
     pass++;
@@ -635,7 +629,7 @@ export async function getLeaderboardData() {
         const hcStrokes = handicapStrokes[s.hole_number] || 0;
         let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes);
         // 🎭 Joker Hole: double points on the admin-designated hole for this round
-        if (r.joker_hole && s.hole_number === r.joker_hole) pts *= 2;
+        pts = applyJoker(pts, s.hole_number, r.joker_hole);
         roundTotal += pts;
       }
       if (pScores.length > 0) playerRoundTotals[p.id][r.id] = roundTotal;
@@ -674,16 +668,34 @@ export async function getTeamLeaderboardData() {
   for (const p of players) playerMap[p.id] = p;
 
   const stabMap = {};
+  const hcCache = {}; // key: roundId_playerId
+
+  const roundMap = Object.fromEntries(rounds.map(r => [r.id, r]));
+
   for (const s of allScores || []) {
     const hole = holesMap[`${s.round_id}_${s.hole_number}`];
     if (!hole) continue;
+
     const player = playerMap[s.player_id];
     if (!player) continue;
-    const round = rounds.find(r => r.id === s.round_id);
+
+    const round = roundMap[s.round_id];
     if (!round) continue;
-    const ch = calcCourseHandicap(player.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
-    const holes = roundHolesMap[s.round_id] || [];
-    const hcStrokes = distributeHandicapStrokes(ch, holes);
+
+    const cacheKey = `${s.round_id}_${s.player_id}`;
+
+    if (!hcCache[cacheKey]) {
+      const ch = calcCourseHandicap(
+        player.handicap,
+        round.courses?.slope,
+        round.courses?.rating,
+        round.courses?.par
+      );
+      const holes = roundHolesMap[s.round_id] || [];
+      hcCache[cacheKey] = distributeHandicapStrokes(ch, holes);
+    }
+
+    const hcStrokes = hcCache[cacheKey];
     let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
     // 🎭 Joker Hole doubles points (team leaderboard uses same hole-level points)
     if (round.joker_hole && s.hole_number === round.joker_hole) pts *= 2;
@@ -719,9 +731,15 @@ export async function getTeamLeaderboardData() {
       const holes = roundHolesMap[r.id] || [];
       let roundTotal = 0;
       for (const h of holes) {
-        const p1pts = stabMap[`${r.id}_${team.p1Id}_${h.hole_number}`] || 0;
-        const p2pts = stabMap[`${r.id}_${team.p2Id}_${h.hole_number}`] || 0;
-        roundTotal += Math.max(p1pts, p2pts);
+        const p1key = `${r.id}_${team.p1Id}_${h.hole_number}`;
+        const p2key = `${r.id}_${team.p2Id}_${h.hole_number}`;
+
+        const p1pts = stabMap[p1key];
+        const p2pts = stabMap[p2key];
+
+        if (p1pts == null && p2pts == null) continue;
+
+        roundTotal += Math.max(p1pts || 0, p2pts || 0);
       }
       roundScores[r.courses?.name || `R${r.round_number}`] = roundTotal;
       total += roundTotal;
@@ -755,6 +773,8 @@ export async function getPlayerStats() {
     let hio = 0, albatross = 0, eagles = 0, birdies = 0, pars = 0, bogeys = 0, dblPlus = 0;
     const roundTotals = {};
 
+    const roundMap = Object.fromEntries(rounds.map(r => [r.id, r]));
+    
     for (const s of pScores) {
       const hole = holesMap[`${s.round_id}_${s.hole_number}`];
       if (!hole) continue;
@@ -768,7 +788,7 @@ export async function getPlayerStats() {
       else dblPlus++;
 
       // Stableford with handicap
-      const round = rounds.find(r => r.id === s.round_id);
+      const round = roundMap[s.round_id];
       if (round) {
         const ch = calcCourseHandicap(p.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
         const holes = roundHolesMap[s.round_id] || [];
@@ -840,7 +860,7 @@ export async function getAwards() {
         const h = holesMap[`${r.id}_${s.hole_number}`];
         if (!h) continue;
         let pts = calcStablefordPoints(s.strokes, h.par, hcStrokes[s.hole_number] || 0);
-        if (r.joker_hole && s.hole_number === r.joker_hole) pts *= 2;
+        pts = applyJoker(pts, s.hole_number, r.joker_hole);
         total += pts;
         if (s.hole_number <= 9) front += pts; else back += pts;
         if (s.hole_number <= 3) first3 += pts;
@@ -848,6 +868,13 @@ export async function getAwards() {
       }
       perPR[p.id][r.id] = { total, front, back, first3, last3 };
     }
+  }
+
+  function applyJoker(points, holeNumber, jokerHole) {
+    if (jokerHole && holeNumber === jokerHole) {
+      return points * 2;
+    }
+    return points;
   }
 
   // ===== PER-ROUND AWARDS =====
@@ -1148,7 +1175,10 @@ export async function getTeamRoundData(roundId) {
     if (!hole) continue;
     const ch = calcCourseHandicap(s.players.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
     const hcStrokes = distributeHandicapStrokes(ch, holes);
-    const pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
+    let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
+    if (round.joker_hole && s.hole_number === round.joker_hole) {
+      pts *= 2;
+    }
     stabMap[`${s.player_id}_${s.hole_number}`] = pts;
   }
 
