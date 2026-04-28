@@ -512,6 +512,13 @@ function calcStablefordPoints(strokes, par, handicapStrokes) {
   return Math.max(0, 2 + (par - netScore));
 }
 
+function applyJoker(points, holeNumber, jokerHole) {
+  if (jokerHole && holeNumber === jokerHole) {
+    return points * 2;
+  }
+  return points;
+}
+
 function distributeHandicapStrokes(courseHandicap, holes) {
   const strokesPerHole = {};
   // Guard: if no holes configured, return empty map (prevents infinite loop)
@@ -774,7 +781,7 @@ export async function getPlayerStats() {
     const roundTotals = {};
 
     const roundMap = Object.fromEntries(rounds.map(r => [r.id, r]));
-    
+
     for (const s of pScores) {
       const hole = holesMap[`${s.round_id}_${s.hole_number}`];
       if (!hole) continue;
@@ -868,13 +875,6 @@ export async function getAwards() {
       }
       perPR[p.id][r.id] = { total, front, back, first3, last3 };
     }
-  }
-
-  function applyJoker(points, holeNumber, jokerHole) {
-    if (jokerHole && holeNumber === jokerHole) {
-      return points * 2;
-    }
-    return points;
   }
 
   // ===== PER-ROUND AWARDS =====
