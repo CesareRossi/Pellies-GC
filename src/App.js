@@ -20,8 +20,8 @@ const NavDropdown = ({ label, icon, items, activeId, onSelect, testId }) => {
   const active = items.find(i => i.id === activeId);
   return (
     <div ref={ref} className="relative" data-testid={testId}>
-      <button onClick={() => setOpen(!open)} data-testid={`${testId}-trigger`} className={`flex items-center gap-2 px-5 py-3 text-sm font-sans transition-all duration-200 rounded-lg whitespace-nowrap ${active ? 'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30' : 'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`}>
-        {icon}<span>{active ? active.label : label}</span>
+      <button onClick={() => setOpen(!open)} data-testid={`${testId}-trigger`} className={`flex items-center gap-2 px-3 py-2 text-sm font-sans transition-all duration-200 rounded-lg whitespace-nowrap border ${active ? 'bg-[#D4AF37]/15 text-[#D4AF37] border-[#D4AF37]/30 shadow-[0_0_0_1px_rgba(212,175,55,0.08)]' : 'text-[#A9C5B4] border-transparent hover:text-white hover:bg-[#FFFFFF]/5 hover:border-[#D4AF37]/15'}`}>
+        {icon}<span>{label}</span>
         <CaretDown size={14} weight="bold" className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
       <AnimatePresence>{open && (
@@ -527,6 +527,28 @@ function App() {
 
   const stabItems = rounds.map(r=>({id: r.id, label: `Stableford - ${r.courses?.name||`Round ${r.round_number}`}`}));
   const teamItems = rounds.map(r=>({id: r.id, label: `Teams - ${r.courses?.name||`Round ${r.round_number}`}`}));
+  const mobilePrimaryItems = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'league_lb', label: 'League Leaderboard' },
+    { id: 'team_lb', label: 'Team Leaderboard' },
+  ];
+  const quickMenuItems = [
+    { id: 'stats', label: 'Player Stats' },
+    { id: 'awards', label: 'Awards' },
+    ...(canScore ? [{ id: 'score_entry', label: 'Scores' }] : []),
+    ...(isAdmin ? [{ id: 'season_wizard', label: 'Season Setup' }, { id: 'admin', label: 'Admin' }] : []),
+  ];
+  const quickMenuActiveViews = new Set(['stats', 'awards', 'score_entry', 'season_wizard', 'admin']);
+  const primaryNavBtnClass = (isActive) => `flex items-center gap-2 px-3 py-2 text-sm font-sans rounded-lg whitespace-nowrap border transition-all ${
+    isActive
+      ? 'bg-[#D4AF37]/15 text-[#D4AF37] border-[#D4AF37]/30 shadow-[0_0_0_1px_rgba(212,175,55,0.08)]'
+      : 'text-[#A9C5B4] border-transparent hover:text-white hover:bg-[#FFFFFF]/5 hover:border-[#D4AF37]/15'
+  }`;
+  const utilityNavBtnClass = (isActive) => `flex items-center gap-1.5 px-3 py-2 text-xs font-sans rounded-lg whitespace-nowrap border transition-all ${
+    isActive
+      ? 'bg-[#D4AF37]/12 text-[#D4AF37] border-[#D4AF37]/25'
+      : 'text-[#9AB6A6] border-transparent hover:text-white hover:bg-[#FFFFFF]/5 hover:border-[#D4AF37]/10'
+  }`;
 
   return (
     <div className="min-h-screen bg-[#051A10] relative overflow-hidden">
@@ -537,7 +559,9 @@ function App() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <img src="https://customer-assets.emergentagent.com/job_40790795-ad45-4986-96fc-d389b274e70b/artifacts/3k0g1frp_IMG_0702.JPG" alt="Pellies GC" className="h-14 object-contain"/>
+                <div className="h-12 w-12 sm:h-14 sm:w-14 shrink-0 overflow-hidden rounded-md border border-[#D4AF37]/25 bg-[#051A10] flex items-center justify-center">
+                  <img src="/favicon.svg" alt="Pellies BC" className="w-[84px] h-[84px] sm:w-[96px] sm:h-[96px] object-contain"/>
+                </div>
                 <div><h1 className="text-2xl sm:text-3xl font-serif text-[#D4AF37] tracking-tight" data-testid="app-season-title">{currentSeason?.name || 'Pellies Golf League'}</h1><p className="text-xs text-[#A9C5B4] mt-0.5">Updated: {formatLastUpdated(lastUpdated)}</p></div>
               </div>
               <div className="flex items-center gap-2">
@@ -555,16 +579,26 @@ function App() {
                 )}
               </div>
             </div>
-            <nav className="mt-4 flex items-center gap-2 flex-wrap">
-              <button onClick={()=>navigate('overview')} className={`flex items-center gap-2 px-5 py-3 text-sm font-sans rounded-lg whitespace-nowrap transition-all ${view==='overview'?'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30':'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`}><Gauge size={18} weight="duotone"/><span>Overview</span></button>
-              <NavDropdown label="Leaderboards" icon={<Trophy size={18} weight="duotone"/>} items={[{id:'league_lb',label:'League Leaderboard'},{id:'team_lb',label:'Team Leaderboard'}]} activeId={view==='league_lb'||view==='team_lb'?view:null} onSelect={id=>navigate(id)} testId="nav-lb"/>
-              {stabItems.length>0&&<NavDropdown label="Stableford" icon={<ChartLine size={18} weight="duotone"/>} items={stabItems} activeId={view==='stableford'?viewParam:null} onSelect={id=>navigate('stableford',id)} testId="nav-stab"/>}
-              {teamItems.length>0&&<NavDropdown label="Team Rounds" icon={<UsersThree size={18} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-teams"/>}
-              <button onClick={()=>navigate('stats')} className={`flex items-center gap-2 px-5 py-3 text-sm font-sans rounded-lg whitespace-nowrap transition-all ${view==='stats'?'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30':'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`}><User size={18} weight="duotone"/><span>Player Stats</span></button>
-              <button onClick={()=>navigate('awards')} className={`flex items-center gap-2 px-5 py-3 text-sm font-sans rounded-lg whitespace-nowrap transition-all ${view==='awards'?'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30':'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`} data-testid="nav-awards"><Trophy size={18} weight="duotone"/><span>Awards</span></button>
-              {canScore&&<button onClick={()=>navigate('score_entry')} className={`flex items-center gap-2 px-5 py-3 text-sm font-sans rounded-lg whitespace-nowrap transition-all ${view==='score_entry'?'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30':'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`} data-testid="nav-scores"><PencilSimple size={18} weight="duotone"/><span>Scores</span></button>}
-              {isAdmin&&<button onClick={()=>navigate('season_wizard')} className={`flex items-center gap-2 px-5 py-3 text-sm font-sans rounded-lg whitespace-nowrap transition-all ${view==='season_wizard'?'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30':'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`} data-testid="nav-season-wizard"><Flag size={18} weight="duotone"/><span>Season Setup</span></button>}
-              {isAdmin&&<button onClick={()=>navigate('admin')} className={`flex items-center gap-2 px-5 py-3 text-sm font-sans rounded-lg whitespace-nowrap transition-all ${view==='admin'?'bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30':'text-[#A9C5B4] hover:text-white hover:bg-[#FFFFFF]/5 border border-transparent'}`}><Gear size={18} weight="duotone"/><span>Admin</span></button>}
+            <nav className="mt-4">
+              <div className="hidden lg:flex rounded-xl border border-[#D4AF37]/20 bg-[#0A2518]/75 backdrop-blur-xl px-2 py-2 items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <button onClick={()=>navigate('overview')} className={primaryNavBtnClass(view==='overview')}><Gauge size={17} weight="duotone"/><span>Overview</span></button>
+                  <NavDropdown label="Leaderboards" icon={<Trophy size={17} weight="duotone"/>} items={[{id:'league_lb',label:'League Leaderboard'},{id:'team_lb',label:'Team Leaderboard'}]} activeId={view==='league_lb'||view==='team_lb'?view:null} onSelect={id=>navigate(id)} testId="nav-lb"/>
+                  {stabItems.length>0&&<NavDropdown label="Stableford" icon={<ChartLine size={17} weight="duotone"/>} items={stabItems} activeId={view==='stableford'?viewParam:null} onSelect={id=>navigate('stableford',id)} testId="nav-stab"/>}
+                  {teamItems.length>0&&<NavDropdown label="Team Rounds" icon={<UsersThree size={17} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-teams"/>}
+                </div>
+                <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-[#D4AF37]/20">
+                  {quickMenuItems.length>0&&<NavDropdown label="Manage" icon={<Gear size={15} weight="duotone"/>} items={quickMenuItems} activeId={quickMenuActiveViews.has(view)?view:null} onSelect={id=>navigate(id)} testId="nav-menu"/>}
+                </div>
+              </div>
+              <div className="lg:hidden rounded-xl border border-[#D4AF37]/20 bg-[#0A2518]/75 backdrop-blur-xl px-2 py-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <NavDropdown label="Play" icon={<Gauge size={16} weight="duotone"/>} items={mobilePrimaryItems} activeId={['overview','league_lb','team_lb'].includes(view)?view:null} onSelect={id=>navigate(id)} testId="nav-mobile-primary"/>
+                  {quickMenuItems.length>0&&<NavDropdown label="Manage" icon={<Gear size={16} weight="duotone"/>} items={quickMenuItems} activeId={quickMenuActiveViews.has(view)?view:null} onSelect={id=>navigate(id)} testId="nav-mobile-menu"/>}
+                  {stabItems.length>0&&<NavDropdown label="Stableford" icon={<ChartLine size={16} weight="duotone"/>} items={stabItems} activeId={view==='stableford'?viewParam:null} onSelect={id=>navigate('stableford',id)} testId="nav-mobile-stab"/>}
+                  {teamItems.length>0&&<NavDropdown label="Team Rounds" icon={<UsersThree size={16} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-mobile-teams"/>}
+                </div>
+              </div>
             </nav>
           </div>
         </header>
