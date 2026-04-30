@@ -103,3 +103,163 @@ html {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+/* Golf Scorecard Styles */
+.golf-scorecard .grid-cols-10,
+.team-scorecard .grid-cols-10 {
+  display: grid;
+  grid-template-columns: 120px repeat(9, minmax(0, 1fr));
+}
+
+.golf-scorecard .grid-cols-13,
+.team-scorecard .grid-cols-13 {
+  display: grid;
+  grid-template-columns: 120px repeat(9, minmax(0, 1fr)) repeat(9, minmax(0, 1fr)) 60px 60px 60px;
+  min-width: 900px; /* Prevent squashing */
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 1024px) {
+  .golf-scorecard .grid-cols-13,
+  .team-scorecard .grid-cols-13 {
+    grid-template-columns: 100px repeat(9, minmax(0, 1fr)) repeat(9, minmax(0, 1fr)) 55px 55px 55px;
+    min-width: 850px;
+  }
+}
+
+@media (max-width: 768px) {
+  .golf-scorecard .grid-cols-10,
+  .team-scorecard .grid-cols-10 {
+    grid-template-columns: 80px repeat(9, minmax(0, 1fr));
+    min-width: 700px;
+  }
+  
+  .golf-scorecard .grid-cols-13,
+  .team-scorecard .grid-cols-13 {
+    grid-template-columns: 70px repeat(9, minmax(0, 1fr)) repeat(9, minmax(0, 1fr)) 45px 45px 45px;
+    min-width: 750px;
+  }
+  
+  .golf-scorecard .px-3,
+  .team-scorecard .px-3 {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  
+  .golf-scorecard .text-xs,
+  .team-scorecard .text-xs {
+    font-size: 0.65rem;
+  }
+  
+  .golf-scorecard .text-sm,
+  .team-scorecard .text-sm {
+    font-size: 0.7rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .golf-scorecard .grid-cols-10,
+  .team-scorecard .grid-cols-10 {
+    grid-template-columns: 60px repeat(9, minmax(0, 1fr));
+    min-width: 650px;
+  }
+  
+  .golf-scorecard .grid-cols-13,
+  .team-scorecard .grid-cols-13 {
+    grid-template-columns: 60px repeat(9, minmax(0, 1fr)) repeat(9, minmax(0, 1fr)) 40px 40px 40px;
+    min-width: 800px;
+  }
+  
+  .golf-scorecard .px-2,
+  .team-scorecard .px-2 {
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+  }
+  
+  .golf-scorecard .py-2,
+  .team-scorecard .py-2 {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+  }
+  
+  .golf-scorecard .py-3,
+  .team-scorecard .py-3 {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+  
+  .golf-scorecard .px-3,
+  .team-scorecard .px-3 {
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .golf-scorecard .grid-cols-13,
+  .team-scorecard .grid-cols-13 {
+    grid-template-columns: 50px repeat(9, minmax(0, 1fr)) repeat(9, minmax(0, 1fr)) 35px 35px 35px;
+    min-width: 750px;
+  }
+  
+  .golf-scorecard .text-lg,
+  .team-scorecard .text-lg {
+    font-size: 0.8rem;
+  }
+  
+  .golf-scorecard .text-sm,
+  .team-scorecard .text-sm {
+    font-size: 0.6rem;
+  }
+  
+  .golf-scorecard .text-xs,
+  .team-scorecard .text-xs {
+    font-size: 0.55rem;
+  }
+}
+
+/* Scorecard hover effects removed - no hover interactions */
+
+/* Fix indicator positioning for all holes */
+.golf-scorecard .absolute,
+.team-scorecard .absolute {
+  z-index: 10;
+}
+
+/* Ensure consistent positioning for hole 18 indicator */
+.golf-scorecard .grid > div > div:nth-child(13) .absolute,
+.team-scorecard .grid > div > div:nth-child(13) .absolute {
+  top: -4px !important;
+  right: -4px !important;
+}
+
+/* Emphasize important cells */
+.golf-scorecard .grid > div > div:nth-child(1),
+.team-scorecard .grid > div > div:nth-child(1) {
+  font-weight: 600;
+}
+
+/* Emphasize important cells */
+.golf-scorecard .text-#D4AF37,
+.team-scorecard .text-#D4AF37 {
+  text-shadow: 0 0 8px rgba(212, 175, 55, 0.3);
+}
+
+/* Scorecard borders refinement */
+.golf-scorecard .border-r,
+.team-scorecard .border-r {
+  border-right-width: 1px;
+}
+
+.golf-scorecard .border-b,
+.team-scorecard .border-b {
+  border-bottom-width: 1px;
+}
+
+/* Team name truncation with ellipsis */
+.golf-scorecard .truncate,
+.team-scorecard .truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -7,6 +7,8 @@ import AdminPanel from './components/AdminPanel';
 import SeasonWizard from './components/SeasonWizard';
 import Awards from './components/Awards';
 import SeasonRecapModal from './components/SeasonRecap';
+import GolfScorecard from './components/GolfScorecard';
+import TeamScorecard from './components/TeamScorecard';
 
 const REFRESH_INTERVAL = 5 * 60 * 1000;
 
@@ -426,6 +428,7 @@ function App() {
   const [playerStats, setPlayerStats] = useState(null);
   const [awards, setAwards] = useState(null);
   const [sheetData, setSheetData] = useState(null);
+  const [scorecardLoading, setScorecardLoading] = useState(false);
   const [rounds, setRounds] = useState([]);
   const [players, setPlayers] = useState([]);
   const [currentSeason, setCurrentSeason] = useState(null);
@@ -481,6 +484,10 @@ function App() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const loadView = useCallback(async (v, param) => {
+    // Reset scorecard loading state when switching views
+    setScorecardLoading(false);
+    setSheetData(null);
+    
     setLoading(true);
     // Safety: force-clear loading after 15s so the user is never stuck on a "Loading..." spinner
     const safety = setTimeout(() => setLoading(false), 15000);
@@ -490,10 +497,24 @@ function App() {
       else if (v === 'team_lb') { setTeamLb(await db.getTeamLeaderboardData()); }
       else if (v === 'stats') { setPlayerStats(await db.getPlayerStats()); }
       else if (v === 'awards') { setAwards(await db.getAwards()); }
-      else if (v === 'stableford' && param) { setSheetData(await db.getStablefordRoundData(param)); }
-      else if (v === 'teams' && param) { setSheetData(await db.getTeamRoundData(param)); }
+      else if (v === 'stableford' && param) { 
+        setScorecardLoading(true);
+        const data = await db.getStablefordRoundData(param);
+        setSheetData(data); 
+        setScorecardLoading(false);
+      }
+      else if (v === 'teams' && param) { 
+        setScorecardLoading(true);
+        const data = await db.getTeamRoundData(param);
+        setSheetData(data); 
+        setScorecardLoading(false);
+      }
       setLastUpdated(new Date().toISOString());
-    } catch(err) { console.error(err); }
+    } catch(err) { 
+      console.error(err); 
+      setScorecardLoading(false);
+      setSheetData(null);
+    }
     finally { clearTimeout(safety); setLoading(false); }
   }, []);
 
@@ -616,10 +637,48 @@ function App() {
         </motion.div>
       );
     }
-    if ((view === 'stableford' || view === 'teams') && sheetData) {
+    if (view === 'stableford') {
+      if (scorecardLoading || !sheetData) {
+        return (
+          <motion.div key="stableford-loading" initial={{opacity:0}} animate={{opacity:1}} className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#D4AF37]"></div>
+              <div className="text-[#D4AF37] text-lg mt-4">Loading scorecard...</div>
+            </div>
+          </motion.div>
+        );
+      }
       return (
         <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
-          <DataTable data={sheetData?.data}/>
+          <GolfScorecard 
+            data={sheetData?.data} 
+            title={sheetData?.display_name} 
+            currentUser={user?.name}
+            jokerHole={sheetData?.joker_hole}
+            beerHole={sheetData?.beer_hole}
+          />
+        </motion.div>
+      );
+    }
+    if (view === 'teams') {
+      if (scorecardLoading || !sheetData) {
+        return (
+          <motion.div key="teams-loading" initial={{opacity:0}} animate={{opacity:1}} className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#D4AF37]"></div>
+              <div className="text-[#D4AF37] text-lg mt-4">Loading team scorecard...</div>
+            </div>
+          </motion.div>
+        );
+      }
+      return (
+        <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
+          <TeamScorecard 
+            data={sheetData?.data} 
+            title={sheetData?.display_name} 
+            jokerHole={sheetData?.joker_hole}
+            beerHole={sheetData?.beer_hole}
+          />
         </motion.div>
       );
     }

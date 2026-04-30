@@ -1163,6 +1163,8 @@ export async function getStablefordRoundData(roundId) {
     name: `Stableford_${round.round_number}`,
     display_name: `Stableford - ${round.courses?.name || `Round ${round.round_number}`}`,
     data: tableData,
+    joker_hole: round.joker_hole,
+    beer_hole: round.beer_hole,
   };
 }
 
@@ -1230,6 +1232,8 @@ export async function getTeamRoundData(roundId) {
     name: `Teams_${round.round_number}`,
     display_name: `Teams - ${round.courses?.name || `Round ${round.round_number}`}`,
     data: sortedData,
+    joker_hole: round.joker_hole,
+    beer_hole: round.beer_hole,
   };
 }
 
