@@ -1,6 +1,37 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import '@/App.css';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// Simple ErrorBoundary component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    console.error('ErrorBoundary caught an error:', error);
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('ErrorBoundary error info:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="text-center py-20">
+          <p className="text-red-400">Something went wrong loading the scorecard.</p>
+          <p className="text-[#A9C5B4] text-sm mt-2">Please try refreshing the page.</p>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+import { createClient } from '@supabase/supabase-js';
 import { Trophy, ChartLine, ArrowsClockwise, User, Target, Flag, Fire, TrendUp, Medal, Golf, CaretDown, UsersThree, Crown, Lightning, MapPin, Users, Gauge, Star, Lock, PencilSimple, Check, X, SignOut, CloudArrowUp, DownloadSimple, Gear, UserPlus, ShieldCheck } from '@phosphor-icons/react';
 import * as db from './services/supabaseService';
 import AdminPanel from './components/AdminPanel';
@@ -11,6 +42,11 @@ import GolfScorecard from './components/GolfScorecard';
 import TeamScorecard from './components/TeamScorecard';
 
 const REFRESH_INTERVAL = 5 * 60 * 1000;
+
+const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || 'https://djalydmfpdfpdarocmto.supabase.co';
+const supabaseKey = process.env.REACT_APP_SUPABASE_KEY || 'sb_publishable_cpgvQJ8un2BAjnWqPyH2jw_2U1U3Kh3';
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const formatLastUpdated = (ts) => ts ? new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Never';
 
@@ -418,6 +454,7 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [recapSeason, setRecapSeason] = useState(null);
   const [showAuth, setShowAuth] = useState(false);
   const [authNotice, setAuthNotice] = useState('');
 
@@ -433,37 +470,33 @@ function App() {
   const [players, setPlayers] = useState([]);
   const [currentSeason, setCurrentSeason] = useState(null);
   const [archivedSeasons, setArchivedSeasons] = useState([]);
-  const [recapSeason, setRecapSeason] = useState(null);
 
   // Auth
   useEffect(() => {
-    let mounted = true;
-    let retryTimer;
-    const fetchProfileWithRetry = async (session) => {
-      // Try once immediately
-      let p = await db.getUserProfile(session);
-      if (mounted && p) { setProfile(p); return; }
-      // Retry up to 3 times with 2s delays — supabase-js may still be
-      // refreshing the token on a fresh page load, causing the first call to stall.
-      for (let i = 0; i < 3 && mounted; i++) {
-        await new Promise(r => retryTimer = setTimeout(r, 2000));
-        if (!mounted) return;
-        p = await db.getUserProfile(session);
-        if (mounted && p) { setProfile(p); return; }
+    const init = async () => {
+      const session = await supabase.auth.getSession();
+      if (session?.session?.user) {
+        setUser(session.session.user);
+        const { data } = await supabase.from('user_profiles').select('*').eq('id', session.session.user.id).single();
+        setProfile(data);
       }
-      if (mounted && !p) setProfile(null);
+      setShowAuth(!session?.session?.user);
     };
+    init();
 
-    const { data: { subscription } } = db.onAuthChange(async (event, session) => {
-      if (!mounted) return;
-      setUser(session?.user || null);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        fetchProfileWithRetry(session);
+        setUser(session.user);
+        supabase.from('user_profiles').select('*').eq('id', session.user.id).single().then(({ data }) => setProfile(data));
+        setShowAuth(false);
       } else {
+        setUser(null);
         setProfile(null);
+        setShowAuth(true);
       }
     });
-    return () => { mounted = false; clearTimeout(retryTimer); subscription.unsubscribe(); };
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const loadData = useCallback(async () => {
@@ -484,10 +517,6 @@ function App() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const loadView = useCallback(async (v, param) => {
-    // Reset scorecard loading state when switching views
-    setScorecardLoading(false);
-    setSheetData(null);
-    
     setLoading(true);
     // Safety: force-clear loading after 15s so the user is never stuck on a "Loading..." spinner
     const safety = setTimeout(() => setLoading(false), 15000);
@@ -498,29 +527,33 @@ function App() {
       else if (v === 'stats') { setPlayerStats(await db.getPlayerStats()); }
       else if (v === 'awards') { setAwards(await db.getAwards()); }
       else if (v === 'stableford' && param) { 
-        setScorecardLoading(true);
         const data = await db.getStablefordRoundData(param);
         setSheetData(data); 
-        setScorecardLoading(false);
       }
       else if (v === 'teams' && param) { 
-        setScorecardLoading(true);
         const data = await db.getTeamRoundData(param);
         setSheetData(data); 
-        setScorecardLoading(false);
       }
       setLastUpdated(new Date().toISOString());
     } catch(err) { 
       console.error(err); 
-      setScorecardLoading(false);
-      setSheetData(null);
     }
-    finally { clearTimeout(safety); setLoading(false); }
+    finally { 
+      clearTimeout(safety); 
+      setLoading(false); 
+    }
   }, []);
 
   useEffect(() => { loadView(view, viewParam); }, [view, viewParam, loadView]);
 
-  const navigate = (v, param) => { setView(v); setViewParam(param || (v==='stableford'||v==='teams'?rounds[0]?.id:null)); };
+  const navigate = (v, param) => { 
+    // Clear sheetData when navigating to scorecards to prevent showing old data
+    if (v === 'stableford' || v === 'teams') {
+      setSheetData(null);
+    }
+    setView(v); 
+    setViewParam(param !== undefined ? param : (v==='stableford'||v==='teams'?rounds[0]?.id:null)); 
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -575,18 +608,29 @@ function App() {
     if (!isBlockedUser) setAuthNotice('');
   }, [user, isPendingUser, isBlockedUser]);
 
-  const stabItems = rounds.map(r=>({id: r.id, label: `Stableford - ${r.courses?.name||`Round ${r.round_number}`}`}));
-  const teamItems = rounds.map(r=>({id: r.id, label: `Teams - ${r.courses?.name||`Round ${r.round_number}`}`}));
-  const mobilePrimaryItems = [
+  const primaryNav = [
     { id: 'overview', label: 'Overview' },
-    { id: 'league_lb', label: 'League Leaderboard' },
-    { id: 'team_lb', label: 'Team Leaderboard' },
+    { id: 'leaderboard', label: 'Leaderboard' },
+    { id: 'team_leaderboard', label: 'Teams' },
+    { id: 'stats', label: 'Player Stats' },
+    { id: 'awards', label: 'Awards' },
+    ...(canScore ? [{ id: 'score_entry', label: 'Scores' }] : []),
+    ...(isAdmin ? [{ id: 'season_wizard', label: 'Season Setup' }, { id: 'admin', label: 'Admin' }] : []),
   ];
+
   const quickMenuItems = [
     { id: 'stats', label: 'Player Stats' },
     { id: 'awards', label: 'Awards' },
     ...(canScore ? [{ id: 'score_entry', label: 'Scores' }] : []),
     ...(isAdmin ? [{ id: 'season_wizard', label: 'Season Setup' }, { id: 'admin', label: 'Admin' }] : []),
+  ];
+
+  const stabItems = useMemo(() => rounds.map(r=>({id: r.id, label: `Stableford - ${r.courses?.name || 'Round ' + r.round_number}`})), [rounds]);
+  const teamItems = useMemo(() => rounds.map(r=>({id: r.id, label: `Teams - ${r.courses?.name || 'Round ' + r.round_number}`})), [rounds]);
+  const mobilePrimaryItems = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'leaderboard', label: 'Leaderboard' },
+    { id: 'team_leaderboard', label: 'Teams' },
   ];
   const quickMenuActiveViews = new Set(['stats', 'awards', 'score_entry', 'season_wizard', 'admin']);
   const primaryNavBtnClass = (isActive) => `flex items-center gap-2 px-3 py-2 text-sm font-sans rounded-lg whitespace-nowrap border transition-all ${
@@ -637,40 +681,22 @@ function App() {
         </motion.div>
       );
     }
-    if (view === 'stableford') {
-      if (scorecardLoading || !sheetData) {
-        return (
-          <motion.div key="stableford-loading" initial={{opacity:0}} animate={{opacity:1}} className="flex items-center justify-center py-20">
-            <div className="text-center">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#D4AF37]"></div>
-              <div className="text-[#D4AF37] text-lg mt-4">Loading scorecard...</div>
-            </div>
-          </motion.div>
-        );
-      }
+    if (view === 'stableford' && sheetData) {
       return (
         <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
-          <GolfScorecard 
-            data={sheetData?.data} 
-            title={sheetData?.display_name} 
-            currentUser={user?.name}
-            jokerHole={sheetData?.joker_hole}
-            beerHole={sheetData?.beer_hole}
-          />
+          <ErrorBoundary>
+            <GolfScorecard 
+              data={sheetData?.data} 
+              title={sheetData?.display_name} 
+              currentUser={user?.name}
+              jokerHole={sheetData?.joker_hole}
+              beerHole={sheetData?.beer_hole}
+            />
+          </ErrorBoundary>
         </motion.div>
       );
     }
-    if (view === 'teams') {
-      if (scorecardLoading || !sheetData) {
-        return (
-          <motion.div key="teams-loading" initial={{opacity:0}} animate={{opacity:1}} className="flex items-center justify-center py-20">
-            <div className="text-center">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#D4AF37]"></div>
-              <div className="text-[#D4AF37] text-lg mt-4">Loading team scorecard...</div>
-            </div>
-          </motion.div>
-        );
-      }
+    if (view === 'teams' && sheetData) {
       return (
         <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
           <TeamScorecard 

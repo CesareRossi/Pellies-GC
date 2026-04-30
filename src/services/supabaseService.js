@@ -169,6 +169,13 @@ export async function getPlayers() {
   return data;
 }
 
+export async function getAllPlayers() {
+  const q = supabase.from('players').select('*').order('name');
+  const { data, error } = await withTimeout(q, 12000, 'getAllPlayers');
+  if (error) throw error;
+  return data;
+}
+
 export async function createPlayer(player) {
   const { data, error } = await supabase.from('players').insert(player).select().single();
   if (error) throw error;
@@ -182,15 +189,29 @@ export async function updatePlayer(id, updates) {
 }
 
 export async function deletePlayer(id) {
-  // Soft-delete the player
-  const { error } = await supabase.from('players').update({ is_active: false }).eq('id', id);
-  if (error) throw error;
-  // Cascade: remove their scores and any teams they're in (teams become meaningless with one player)
+  // Hard delete the player (removes from database)
+  // First remove their scores and teams
   await supabase.from('scores').delete().eq('player_id', id);
   const { error: t1 } = await supabase.from('teams').delete().eq('player1_id', id);
   if (t1) throw t1;
   const { error: t2 } = await supabase.from('teams').delete().eq('player2_id', id);
   if (t2) throw t2;
+  
+  // Then delete the player record
+  const { error } = await supabase.from('players').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function disablePlayer(id) {
+  // Just disable without removing scores/teams
+  const { error } = await supabase.from('players').update({ is_active: false }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function enablePlayer(id) {
+  // Enable player
+  const { error } = await supabase.from('players').update({ is_active: true }).eq('id', id);
+  if (error) throw error;
 }
 
 // ===== COURSES =====
@@ -489,6 +510,11 @@ export async function createTeam(team) {
 
 export async function deleteTeam(id) {
   const { error } = await supabase.from('teams').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteTeamsByPlayer(playerId) {
+  const { error } = await supabase.from('teams').delete().or(`player1_id.eq.${playerId},player2_id.eq.${playerId}`);
   if (error) throw error;
 }
 
@@ -854,7 +880,7 @@ export async function getPlayerStats() {
 // Computes per-round awards grouped by round/course, plus season summaries.
 export async function getAwards() {
   const [players, rounds, scoresRes, exclusionsRes] = await Promise.all([
-    getPlayers(),
+    getAllPlayers(),
     getSetUpRounds(),
     withTimeout(supabase.from('scores').select('round_id, player_id, hole_number, strokes'), 15000, 'scores-awards'),
     withTimeout(supabase.from('round_exclusions').select('round_id, player_id'), 10000, 'exclusions'),
@@ -903,7 +929,7 @@ export async function getAwards() {
   for (const r of rounds) {
     const excludedSet = excludedByRound[r.id] || new Set();
     const entrants = players
-      .filter(p => !excludedSet.has(p.id))
+      .filter(p => p.is_active && !excludedSet.has(p.id))
       .map(p => ({ playerId: p.id, name: p.name, ...perPR[p.id]?.[r.id] }))
       .filter(e => e.total != null);
     if (entrants.length === 0) {
@@ -931,7 +957,8 @@ export async function getAwards() {
     // 🍺 Beer Hole — worst strokes on the designated beer hole (everyone tied is liable)
     let beer = null;
     if (r.beer_hole) {
-      const scoresOnHole = allScores.filter(s => s.round_id === r.id && s.hole_number === r.beer_hole && !excludedSet.has(s.player_id));
+      const activePlayerIds = new Set(players.filter(p => p.is_active).map(p => p.id));
+      const scoresOnHole = allScores.filter(s => s.round_id === r.id && s.hole_number === r.beer_hole && !excludedSet.has(s.player_id) && activePlayerIds.has(s.player_id));
       if (scoresOnHole.length > 0) {
         const worstStrokes = Math.max(...scoresOnHole.map(s => s.strokes));
         const tied = scoresOnHole.filter(s => s.strokes === worstStrokes).map(s => nameById[s.player_id] || '?');
@@ -945,7 +972,8 @@ export async function getAwards() {
       const holesForRound = roundHolesMap[r.id] || [];
       const hole = holesForRound.find(h => h.hole_number === r.joker_hole);
       if (hole) {
-        const jokerScores = allScores.filter(s => s.round_id === r.id && s.hole_number === r.joker_hole && !excludedSet.has(s.player_id));
+        const activePlayerIds = new Set(players.filter(p => p.is_active).map(p => p.id));
+        const jokerScores = allScores.filter(s => s.round_id === r.id && s.hole_number === r.joker_hole && !excludedSet.has(s.player_id) && activePlayerIds.has(s.player_id));
         let best = null;
         for (const s of jokerScores) {
           const player = players.find(p => p.id === s.player_id);
@@ -1009,10 +1037,11 @@ export async function getAwards() {
 
   // Season-wide beer-hole tally: how many times each player bought drinks (ties all count)
   const beerTally = {};
+  const activePlayerIds = new Set(players.filter(p => p.is_active).map(p => p.id));
   for (const r of rounds) {
     if (!r.beer_hole) continue;
     const excludedSet = excludedByRound[r.id] || new Set();
-    const scoresOnHole = allScores.filter(s => s.round_id === r.id && s.hole_number === r.beer_hole && !excludedSet.has(s.player_id));
+    const scoresOnHole = allScores.filter(s => s.round_id === r.id && s.hole_number === r.beer_hole && !excludedSet.has(s.player_id) && activePlayerIds.has(s.player_id));
     if (scoresOnHole.length === 0) continue;
     const worstStrokes = Math.max(...scoresOnHole.map(s => s.strokes));
     for (const s of scoresOnHole) {
@@ -1081,7 +1110,7 @@ export async function getAwards() {
 export async function getSeasonOverview() {
   // Parallelize all heavy fetches instead of awaiting sequentially (was ~20 sequential DB calls)
   const [allRounds, allPlayers, stats, lbRes, teamLbRes] = await Promise.all([
-    getRounds(),
+    getSetUpRounds(),
     getPlayers(),
     getPlayerStats(),
     getLeaderboardData(),
@@ -1097,7 +1126,7 @@ export async function getSeasonOverview() {
   const birdieLeader = stats.reduce((best, s) => s.birdies > best.count ? { player: s.name, count: s.birdies } : best, { player: '', count: 0 });
   const hioLeader = stats.reduce((best, s) => s.hole_in_ones > best.count ? { player: s.name, count: s.hole_in_ones } : best, { player: '', count: 0 });
 
-  return {
+  const result = {
     top_players: leaderboard.slice(0, 3).map(p => ({ name: p.player, total: p.total, rank: p.rank })),
     top_team: teamLb[0] ? { name: teamLb[0].player, total: teamLb[0].total } : null,
     active_players: activePlayers, total_players: allPlayers.length,
@@ -1107,6 +1136,7 @@ export async function getSeasonOverview() {
     total_rounds_played: stats.reduce((a, s) => a + s.rounds_played, 0),
     last_updated: new Date().toISOString(),
   };
+  return result;
 }
 
 // Fetch holes for a single round: course_holes first, round_holes fallback
@@ -1121,20 +1151,30 @@ async function holesForRound(round) {
 
 // ===== STABLEFORD ROUND VIEW =====
 export async function getStablefordRoundData(roundId) {
-  const { data: round } = await supabase.from('rounds').select('*, courses(*)').eq('id', roundId).single();
-  if (!round) return { name: '', display_name: '', data: [] };
-  const [holes, scoresRes] = await Promise.all([
-    holesForRound(round),
-    supabase.from('scores').select('*, players(name, handicap)').eq('round_id', roundId),
-  ]);
-  const scores = scoresRes.data || [];
+  try {
+    const { data: round } = await supabase.from('rounds').select('*, courses(*)').eq('id', roundId).single();
+    if (!round) {
+      return { name: '', display_name: '', data: [] };
+    }
+    
+    const [holes, scoresRes] = await Promise.all([
+      holesForRound(round),
+      supabase.from('scores').select('*, players(name, handicap)').eq('round_id', roundId),
+    ]);
+    const scores = scoresRes.data || [];
 
-  if (!holes || holes.length === 0) return { name: '', display_name: '', data: [] };
+    if (!holes || holes.length === 0) {
+      return { name: '', display_name: '', data: [] };
+    }
 
-  const playerNames = [...new Set(scores.map(s => s.players.name))];
+    // Get all players and filter for active ones to avoid caching issues
+    const allPlayers = await getAllPlayers();
+    const activePlayerIds = new Set(allPlayers.filter(p => p.is_active).map(p => p.id));
+    const activeScores = scores.filter(s => activePlayerIds.has(s.player_id));
+    const playerNames = [...new Set(activeScores.map(s => s.players.name))];
 
   const stabMap = {};
-  for (const s of scores) {
+  for (const s of activeScores) {
     const hole = holes.find(h => h.hole_number === s.hole_number);
     if (!hole) continue;
     const ch = calcCourseHandicap(s.players.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
@@ -1166,6 +1206,9 @@ export async function getStablefordRoundData(roundId) {
     joker_hole: round.joker_hole,
     beer_hole: round.beer_hole,
   };
+  } catch (error) {
+    return { name: '', display_name: '', data: [] };
+  }
 }
 
 // ===== TEAM ROUND VIEW =====
@@ -1189,10 +1232,15 @@ export async function getTeamRoundData(roundId) {
   ]);
   const scores = scoresRes.data || [];
 
+  // Get all players and filter for active ones to avoid caching issues
+  const allPlayers = await getAllPlayers();
+  const activePlayerIds = new Set(allPlayers.filter(p => p.is_active).map(p => p.id));
+  const activeScores = scores.filter(s => activePlayerIds.has(s.player_id));
+
   if (!holes || holes.length === 0) return { name: '', display_name: '', data: [] };
 
   const stabMap = {};
-  for (const s of scores) {
+  for (const s of activeScores) {
     const hole = holes.find(h => h.hole_number === s.hole_number);
     if (!hole) continue;
     const ch = calcCourseHandicap(s.players.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);

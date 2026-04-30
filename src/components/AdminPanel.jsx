@@ -70,9 +70,10 @@ const PlayersPanel = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [confirmDel, setConfirmDel] = useState(null); // player object
+  const [actionError, setActionError] = useState('');
 
   useEffect(() => { load(); }, []);
-  const load = async () => { setPlayers(await db.getPlayers()); };
+  const load = async () => { setPlayers(await db.getAllPlayers()); };
 
   const save = async () => {
     if (!form.name.trim()) return;
@@ -86,23 +87,62 @@ const PlayersPanel = () => {
 
   const doDelete = async () => {
     if (!confirmDel) return;
+    setActionError('');
     try {
       await db.deletePlayer(confirmDel.id);
       await load();
-    } catch (e) { alert('Error: ' + e.message); }
+    } catch (e) { 
+      setActionError('Error: ' + e.message); 
+      setTimeout(() => setActionError(''), 5000);
+    }
   };
+
+  const togglePlayerActive = async (playerId) => {
+    const player = players.find(p => p.id === playerId);
+    if (!player) return;
+    
+    setActionError('');
+    try {
+      if (player.is_active) {
+        await db.disablePlayer(playerId);
+      } else {
+        await db.enablePlayer(playerId);
+      }
+      await load();
+    } catch (e) { 
+      setActionError('Error: ' + e.message); 
+      setTimeout(() => setActionError(''), 5000);
+    }
+  };
+
+  // Sort players: enabled first, then disabled
+  const sortedPlayers = [...players].sort((a, b) => {
+    if (a.is_active && !b.is_active) return -1;
+    if (!a.is_active && b.is_active) return 1;
+    return a.name.localeCompare(b.name);
+  });
 
   return (
     <div>
       <div className="flex items-center gap-3 mb-5">
         <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider flex-1">Players ({players.length})</h3>
-        <button onClick={() => { setEditing('new'); setForm({ name: '', handicap: null }); setError(''); }} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30 rounded-lg hover:bg-[#D4AF37]/30"><Plus size={14} /> Add</button>
+        <button onClick={() => { setEditing('new'); setForm({ name: '', handicap: null }); setError(''); setActionError(''); }} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30 rounded-lg hover:bg-[#D4AF37]/30"><Plus size={14} /> Add</button>
       </div>
-      <div className="space-y-2">{players.map(p => (
-        <div key={p.id} className="flex items-center justify-between py-2.5 px-4 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10">
-          <div><p className="text-white text-sm font-semibold">{p.name}</p><p className="text-[#A9C5B4] text-xs">Handicap: {p.handicap ?? 'Not set'}</p></div>
+      {actionError && <div className="mb-4 text-xs text-red-400">{actionError}</div>}
+      <div className="space-y-2">{sortedPlayers.map(p => (
+        <div key={p.id} className={`flex items-center justify-between py-2.5 px-4 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10 ${!p.is_active ? 'opacity-50' : ''}`}>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-white text-sm font-semibold">{p.name}</p>
+              {!p.is_active && <span className="text-[10px] uppercase tracking-wider text-amber-400">(disabled)</span>}
+            </div>
+            <p className="text-[#A9C5B4] text-xs">Handicap: {p.handicap ?? 'Not set'}</p>
+          </div>
           <div className="flex gap-2">
             <button onClick={() => { setEditing(p.id); setForm({ name: p.name, handicap: p.handicap }); setError(''); }} className="text-[#A9C5B4] hover:text-[#D4AF37]" data-testid={`player-edit-${p.id}`}><PencilSimple size={16} /></button>
+            <button onClick={() => togglePlayerActive(p.id)} className="text-[#A9C5B4] hover:text-amber-400" data-testid={`player-toggle-${p.id}`}>
+              {p.is_active ? 'Disable' : 'Enable'}
+            </button>
             <button onClick={() => setConfirmDel(p)} className="text-[#A9C5B4] hover:text-red-400" data-testid={`player-delete-${p.id}`}><Trash size={16} /></button>
           </div>
         </div>
@@ -649,7 +689,6 @@ const UsersPanel = ({ currentUserId }) => {
   );
 };
 
-// ===== SEASON (v8) — name / rename current season + archive + history =====
 const SeasonPanel = ({ onSeasonChanged }) => {
   const [current, setCurrent] = useState(null);
   const [archived, setArchived] = useState([]);
@@ -908,7 +947,12 @@ const DangerPanel = () => {
         setMsg(`✅ ${count} score entries deleted. Click Refresh in the top bar to see the dashboard update.`);
       }
     } catch (e) { setMsg('Error: ' + e.message); }
-    finally { setBusy(false); }
+    finally {
+      setBusy(false);
+      // Clear any stuck scorecard loading state immediately
+      const event = new CustomEvent('clearScorecardLoading');
+      window.dispatchEvent(event);
+    }
   };
 
   const doReset = async () => {
@@ -922,7 +966,12 @@ const DangerPanel = () => {
         setMsg(`✅ Season reset. Deleted ${counts.scores} scores, ${counts.teams} teams, ${counts.holes} legacy per-round hole rows, ${counts.rounds} rounds. Course-level hole setup preserved. Click Refresh in the top bar to reload the dashboard.`);
       }
     } catch (e) { setMsg('Error: ' + e.message); }
-    finally { setBusy(false); }
+    finally {
+      setBusy(false);
+      // Clear any stuck scorecard loading state immediately
+      const event = new CustomEvent('clearScorecardLoading');
+      window.dispatchEvent(event);
+    }
   };
 
   return (
