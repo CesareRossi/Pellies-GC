@@ -417,6 +417,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [showAuth, setShowAuth] = useState(false);
+  const [authNotice, setAuthNotice] = useState('');
 
   // Data
   const [overview, setOverview] = useState(null);
@@ -522,8 +523,36 @@ function App() {
     setViewParam(null);
   };
 
-  const isAdmin = profile?.role === 'admin';
-  const canScore = !!user; // Any logged-in user can enter scores
+  const role = profile?.role || 'guest';
+  const isApprovedUser = role === 'approved' || role === 'admin';
+  const isPendingUser = role === 'pending';
+  const isBlockedUser = role === 'rejected' || role === 'removed' || role === 'disabled';
+  const isAdmin = role === 'admin';
+  const canScore = !!user && isApprovedUser;
+
+  useEffect(() => {
+    if (!user || !isBlockedUser) return;
+    (async () => {
+      try { await db.signOut(); } catch (_) {}
+      setUser(null);
+      setProfile(null);
+      setView('overview');
+      setViewParam(null);
+      setAuthNotice('Your account is disabled. Please contact an admin.');
+    })();
+  }, [user, isBlockedUser]);
+
+  useEffect(() => {
+    if (!user) {
+      setAuthNotice('');
+      return;
+    }
+    if (isPendingUser) {
+      setAuthNotice('Your account is pending approval. You can view scores, but editing is disabled.');
+      return;
+    }
+    if (!isBlockedUser) setAuthNotice('');
+  }, [user, isPendingUser, isBlockedUser]);
 
   const stabItems = rounds.map(r=>({id: r.id, label: `Stableford - ${r.courses?.name||`Round ${r.round_number}`}`}));
   const teamItems = rounds.map(r=>({id: r.id, label: `Teams - ${r.courses?.name||`Round ${r.round_number}`}`}));
@@ -550,6 +579,56 @@ function App() {
       : 'text-[#9AB6A6] border-transparent hover:text-white hover:bg-[#FFFFFF]/5 hover:border-[#D4AF37]/10'
   }`;
 
+  useEffect(() => {
+    if (view === 'score_entry' && !canScore) setView('overview');
+    if ((view === 'admin' || view === 'season_wizard') && !isAdmin) setView('overview');
+  }, [view, canScore, isAdmin]);
+
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <motion.div key="loading" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="flex items-center justify-center py-20">
+          <div className="text-[#D4AF37] text-lg">Loading...</div>
+        </motion.div>
+      );
+    }
+    if (view === 'overview' && overview) return <Overview data={overview} onNav={navigate} archivedSeasons={archivedSeasons} onShareRecap={setRecapSeason}/>;
+    if (view === 'stats' && playerStats) {
+      return (
+        <motion.div key="stats" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {playerStats.map((p,i)=><PlayerCard key={p.name} player={p} index={i}/>)}
+          </div>
+        </motion.div>
+      );
+    }
+    if (view === 'awards' && awards) {
+      return (
+        <motion.div key="awards" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
+          <Awards awards={awards}/>
+        </motion.div>
+      );
+    }
+    if ((view === 'league_lb' || view === 'team_lb') && (leaderboard || teamLb)) {
+      return (
+        <motion.div key={view} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
+          <DataTable data={view==='league_lb'?leaderboard?.leaderboard:teamLb?.leaderboard}/>
+        </motion.div>
+      );
+    }
+    if ((view === 'stableford' || view === 'teams') && sheetData) {
+      return (
+        <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
+          <DataTable data={sheetData?.data}/>
+        </motion.div>
+      );
+    }
+    if (view === 'score_entry' && canScore) return <ScoreEntry rounds={rounds} players={players} userId={user?.id}/>;
+    if (view === 'season_wizard') return <SeasonWizard onComplete={()=>{ loadData(); navigate('overview'); }}/>;
+    if (view === 'admin') return <AdminPanel onSeasonChanged={loadData} currentUserId={user?.id}/>;
+    return null;
+  };
+
   return (
     <div className="min-h-screen bg-[#051A10] relative overflow-hidden">
       <div className="fixed inset-0 bg-cover bg-center" style={{backgroundImage:'url(https://images.unsplash.com/photo-1761400025076-8fec91f620f2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzN8MHwxfHNlYXJjaHwyfHxnb2xmJTIwY291cnNlJTIwZmFpcndheXN8ZW58MHx8fHwxNzc2MzQ1Mzg5fDA&ixlib=rb-4.1.0&q=85)'}}/>
@@ -570,7 +649,7 @@ function App() {
                 </button>
                 {user ? (
                   <button onClick={handleSignOut} className="flex items-center gap-1 px-3 py-2 text-xs text-[#A9C5B4] hover:text-red-400 transition-colors" data-testid="sign-out-button">
-                    <SignOut size={16}/><span className="hidden sm:inline">{profile?.display_name||user.email.split('@')[0]}</span>
+                    <SignOut size={16}/><span className="hidden sm:inline">{profile?.display_name||user.email.split('@')[0]}{isPendingUser ? ' (pending)' : ''}</span>
                   </button>
                 ) : (
                   <button onClick={()=>setShowAuth(true)} className="flex items-center gap-1 px-3 py-2 text-sm text-[#D4AF37] hover:text-[#F1D67E] transition-colors">
@@ -579,6 +658,11 @@ function App() {
                 )}
               </div>
             </div>
+            {authNotice && (
+              <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${isPendingUser ? 'border-amber-500/30 bg-amber-900/20 text-amber-200' : 'border-red-500/30 bg-red-900/20 text-red-200'}`}>
+                {authNotice}
+              </div>
+            )}
             <nav className="mt-4">
               <div className="hidden lg:flex rounded-xl border border-[#D4AF37]/20 bg-[#0A2518]/75 backdrop-blur-xl px-2 py-2 items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
@@ -604,35 +688,7 @@ function App() {
         </header>
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <AnimatePresence mode="wait">
-            {loading ? (
-              <motion.div key="loading" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="flex items-center justify-center py-20"><div className="text-[#D4AF37] text-lg">Loading...</div></motion.div>
-            ) : view==='overview'&&overview ? (
-              <Overview data={overview} onNav={navigate} archivedSeasons={archivedSeasons} onShareRecap={setRecapSeason}/>
-            ) : view==='stats'&&playerStats ? (
-              <motion.div key="stats" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                  {playerStats.map((p,i)=><PlayerCard key={p.name} player={p} index={i}/>)}
-                </div>
-              </motion.div>
-            ) : view==='awards'&&awards ? (
-              <motion.div key="awards" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
-                <Awards awards={awards}/>
-              </motion.div>
-            ) : (view==='league_lb'||view==='team_lb')&&(leaderboard||teamLb) ? (
-              <motion.div key={view} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
-                <DataTable data={view==='league_lb'?leaderboard?.leaderboard:teamLb?.leaderboard}/>
-              </motion.div>
-            ) : (view==='stableford'||view==='teams')&&sheetData ? (
-              <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
-                <DataTable data={sheetData?.data}/>
-              </motion.div>
-            ) : view==='score_entry' ? (
-              <ScoreEntry rounds={rounds} players={players} userId={user?.id}/>
-            ) : view==='season_wizard' ? (
-              <SeasonWizard onComplete={()=>{ loadData(); navigate('overview'); }}/>
-            ) : view==='admin' ? (
-              <AdminPanel onSeasonChanged={loadData}/>
-            ) : null}
+            {renderContent()}
           </AnimatePresence>
         </main>
       </div>

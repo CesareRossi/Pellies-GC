@@ -75,6 +75,26 @@ export async function signIn(email, password) {
     }
     throw error;
   }
+  // Enforce blocked roles immediately after authentication.
+  // Supabase Auth itself does not know app-specific roles in user_profiles.
+  try {
+    const userId = data?.user?.id;
+    if (userId) {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle();
+      const role = profile?.role;
+      if (role === 'rejected' || role === 'removed' || role === 'disabled') {
+        try { await supabase.auth.signOut({ scope: 'local' }); } catch (_) {}
+        throw new Error('Your account is disabled. Please contact an admin.');
+      }
+    }
+  } catch (roleErr) {
+    if (roleErr instanceof Error && roleErr.message) throw roleErr;
+    throw new Error('Unable to verify account access. Please try again.');
+  }
   return data;
 }
 

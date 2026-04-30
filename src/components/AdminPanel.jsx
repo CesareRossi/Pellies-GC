@@ -597,7 +597,7 @@ const TeamsPanel = () => {
 };
 
 // ===== USERS =====
-const UsersPanel = () => {
+const UsersPanel = ({ currentUserId }) => {
   const [users, setUsers] = useState([]);
   const [confirmRemove, setConfirmRemove] = useState(null);
   useEffect(() => { load(); }, []);
@@ -625,16 +625,14 @@ const UsersPanel = () => {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${rb(u.role)}`}>{ri(u.role)} {u.role}</span>
-            {u.role !== 'admin' && (
-              <>
-                <select value={u.role} onChange={e => updateRole(u.id, e.target.value)} className="bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs rounded px-2 py-1 focus:outline-none flex-1 sm:flex-none" data-testid={`user-role-${u.id}`}>
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="admin">Admin</option>
-                  <option value="rejected">Rejected (blocked)</option>
-                </select>
-                <button onClick={() => setConfirmRemove(u)} title="Remove user" className="text-[#A9C5B4] hover:text-red-400 flex-shrink-0" data-testid={`user-remove-${u.id}`}><Trash size={16} /></button>
-              </>
+            <select value={u.role} onChange={e => updateRole(u.id, e.target.value)} className="bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs rounded px-2 py-1 focus:outline-none flex-1 sm:flex-none" data-testid={`user-role-${u.id}`}>
+              <option value="pending">Pending (view only)</option>
+              <option value="approved">Approved (edit access)</option>
+              <option value="admin">Admin</option>
+              <option value="rejected">Disabled</option>
+            </select>
+            {u.id !== currentUserId && (
+              <button onClick={() => setConfirmRemove(u)} title="Remove user" className="text-[#A9C5B4] hover:text-red-400 flex-shrink-0" data-testid={`user-remove-${u.id}`}><Trash size={16} /></button>
             )}
           </div>
         </div>
@@ -961,7 +959,7 @@ const DangerPanel = () => {
 };
 
 // ===== MAIN ADMIN PANEL =====
-export default function AdminPanel({ onSeasonChanged }) {
+export default function AdminPanel({ onSeasonChanged, currentUserId }) {
   const [tab, setTab] = useState('players');
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} data-testid="admin-panel">
@@ -974,7 +972,7 @@ export default function AdminPanel({ onSeasonChanged }) {
         {tab === 'courses' && <CoursesPanel />}
         {tab === 'rounds' && <RoundsPanel />}
         {tab === 'teams' && <TeamsPanel />}
-        {tab === 'users' && <UsersPanel />}
+        {tab === 'users' && <UsersPanel currentUserId={currentUserId} />}
         {tab === 'season' && <SeasonPanel onSeasonChanged={onSeasonChanged} />}
         {tab === 'danger' && <DangerPanel />}
       </div>
