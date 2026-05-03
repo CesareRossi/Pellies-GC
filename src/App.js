@@ -610,8 +610,8 @@ function App() {
 
   const primaryNav = [
     { id: 'overview', label: 'Overview' },
-    { id: 'leaderboard', label: 'Leaderboard' },
-    { id: 'team_leaderboard', label: 'Teams' },
+    { id: 'league_lb', label: 'League Leaderboard' },
+    { id: 'team_lb', label: 'Team Leaderboard' },
     { id: 'stats', label: 'Player Stats' },
     { id: 'awards', label: 'Awards' },
     ...(canScore ? [{ id: 'score_entry', label: 'Scores' }] : []),
@@ -629,8 +629,8 @@ function App() {
   const teamItems = useMemo(() => rounds.map(r=>({id: r.id, label: `Teams - ${r.courses?.name || 'Round ' + r.round_number}`})), [rounds]);
   const mobilePrimaryItems = [
     { id: 'overview', label: 'Overview' },
-    { id: 'leaderboard', label: 'Leaderboard' },
-    { id: 'team_leaderboard', label: 'Teams' },
+    { id: 'league_lb', label: 'League Leaderboard' },
+    { id: 'team_lb', label: 'Team Leaderboard' },
   ];
   const quickMenuActiveViews = new Set(['stats', 'awards', 'score_entry', 'season_wizard', 'admin']);
   const primaryNavBtnClass = (isActive) => `flex items-center gap-2 px-3 py-2 text-sm font-sans rounded-lg whitespace-nowrap border transition-all ${
