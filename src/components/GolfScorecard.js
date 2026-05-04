@@ -161,7 +161,7 @@ const GolfScorecard = ({ data, title, currentUser = null, jokerHole = null, beer
         {/* Par Row */}
         <div className="relative bg-[#0A2A1A]/50 border-b border-[#D4AF37]/20">
           <div className="grid grid-cols-13">
-            <div className="sticky left-0 z-20 px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-sans text-[#A9C5B4] uppercase tracking-wider border-r border-[#D4AF37]/20 bg-[#0A2A1A]/50">PAR</div>
+            <div className="sticky left-0 z-20 px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-sans text-[#A9C5B4] uppercase tracking-wider border-r border-[#D4AF37]/20" style={{backgroundColor: '#0A2518'}}>PAR</div>
             {front9Holes.map(hole => (
               <div key={hole.Hole} className="px-1 sm:px-2 py-1.5 sm:py-2 text-center text-xs sm:text-sm font-semibold text-white border-r border-[#D4AF37]/20">
                 {hole.Par}
@@ -187,7 +187,7 @@ const GolfScorecard = ({ data, title, currentUser = null, jokerHole = null, beer
         {/* Stroke Index Row */}
         <div className="relative bg-[#0F2C1D] border-b border-[#D4AF37]/20">
           <div className="grid grid-cols-13">
-            <div className="sticky left-0 z-20 px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-sans text-[#A9C5B4] uppercase tracking-wider border-r border-[#D4AF37]/20 bg-[#0F2C1D]">SI</div>
+            <div className="sticky left-0 z-20 px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-sans text-[#A9C5B4] uppercase tracking-wider border-r border-[#D4AF37]/20" style={{backgroundColor: '#0F2C1D'}}>SI</div>
             {front9Holes.map(hole => (
               <div key={hole.Hole} className="px-1 sm:px-2 py-1.5 sm:py-2 text-center text-xs sm:text-sm text-[#A9C5B4] border-r border-[#D4AF37]/20">
                 {hole.SI}

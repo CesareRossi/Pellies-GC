@@ -682,14 +682,14 @@ function App() {
       const modeLabel = leaderboardMode === 'stableford' ? 'Stableford' : 'Stroke Play';
       return (
         <motion.div key={view} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
-          <div className="flex items-center justify-between bg-[#0F2C1D]/90 rounded-xl border border-[#D4AF37]/20 p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-[#0F2C1D]/90 rounded-xl border border-[#D4AF37]/20 p-4 gap-3 sm:gap-0">
             <h2 className="text-xl font-serif text-[#D4AF37]">{title}</h2>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-[#A9C5B4]">Mode:</span>
-              <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20">
+              <span className="text-xs text-[#A9C5B4] hidden sm:inline">Mode:</span>
+              <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20 w-full sm:w-auto">
                 <button
                   onClick={() => setLeaderboardMode('stableford')}
-                  className={`px-3 py-1.5 text-xs rounded-md transition-all ${
+                  className={`px-2 sm:px-3 py-1.5 text-xs rounded-md transition-all flex-1 sm:flex-none ${
                     leaderboardMode === 'stableford'
                       ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
                       : 'text-[#A9C5B4] hover:text-white'
@@ -699,7 +699,7 @@ function App() {
                 </button>
                 <button
                   onClick={() => setLeaderboardMode('stroke')}
-                  className={`px-3 py-1.5 text-xs rounded-md transition-all ${
+                  className={`px-2 sm:px-3 py-1.5 text-xs rounded-md transition-all flex-1 sm:flex-none ${
                     leaderboardMode === 'stroke'
                       ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
                       : 'text-[#A9C5B4] hover:text-white'
@@ -722,14 +722,14 @@ function App() {
     if (view === 'stableford' && sheetData) {
       return (
         <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
-          <div className="flex items-center justify-between bg-[#0F2C1D]/90 rounded-xl border border-[#D4AF37]/20 p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-[#0F2C1D]/90 rounded-xl border border-[#D4AF37]/20 p-4 gap-3 sm:gap-0">
             <h2 className="text-xl font-serif text-[#D4AF37]">{sheetData?.display_name}</h2>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-[#A9C5B4]">Mode:</span>
-              <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20">
+              <span className="text-xs text-[#A9C5B4] hidden sm:inline">Mode:</span>
+              <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20 w-full sm:w-auto">
                 <button
                   onClick={() => setLeaderboardMode('stableford')}
-                  className={`px-3 py-1.5 text-xs rounded-md transition-all ${
+                  className={`px-2 sm:px-3 py-1.5 text-xs rounded-md transition-all flex-1 sm:flex-none ${
                     leaderboardMode === 'stableford'
                       ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
                       : 'text-[#A9C5B4] hover:text-white'
@@ -739,7 +739,7 @@ function App() {
                 </button>
                 <button
                   onClick={() => setLeaderboardMode('stroke')}
-                  className={`px-3 py-1.5 text-xs rounded-md transition-all ${
+                  className={`px-2 sm:px-3 py-1.5 text-xs rounded-md transition-all flex-1 sm:flex-none ${
                     leaderboardMode === 'stroke'
                       ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
                       : 'text-[#A9C5B4] hover:text-white'
@@ -772,14 +772,14 @@ function App() {
     if (view === 'teams' && sheetData) {
       return (
         <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
-          <div className="flex items-center justify-between bg-[#0F2C1D]/90 rounded-xl border border-[#D4AF37]/20 p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-[#0F2C1D]/90 rounded-xl border border-[#D4AF37]/20 p-4 gap-3 sm:gap-0">
             <h2 className="text-xl font-serif text-[#D4AF37]">{sheetData?.display_name}</h2>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-[#A9C5B4]">Mode:</span>
-              <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20">
+              <span className="text-xs text-[#A9C5B4] hidden sm:inline">Mode:</span>
+              <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20 w-full sm:w-auto">
                 <button
                   onClick={() => setLeaderboardMode('stableford')}
-                  className={`px-3 py-1.5 text-xs rounded-md transition-all ${
+                  className={`px-2 sm:px-3 py-1.5 text-xs rounded-md transition-all flex-1 sm:flex-none ${
                     leaderboardMode === 'stableford'
                       ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
                       : 'text-[#A9C5B4] hover:text-white'
@@ -789,7 +789,7 @@ function App() {
                 </button>
                 <button
                   onClick={() => setLeaderboardMode('stroke')}
-                  className={`px-3 py-1.5 text-xs rounded-md transition-all ${
+                  className={`px-2 sm:px-3 py-1.5 text-xs rounded-md transition-all flex-1 sm:flex-none ${
                     leaderboardMode === 'stroke'
                       ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
                       : 'text-[#A9C5B4] hover:text-white'

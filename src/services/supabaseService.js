@@ -981,26 +981,32 @@ export async function getPlayerStats() {
     for (const s of pScores) {
       const hole = holesMap[`${s.round_id}_${s.hole_number}`];
       if (!hole) continue;
-      const diff = s.strokes - hole.par; // Raw diff (no handicap for stats display)
-      if (s.strokes === 1) hio++;
+
+      // Calculate net score using course handicap for accurate stats
+      const round = roundMap[s.round_id];
+      let netStrokes = s.strokes;
+      if (round) {
+        const ch = calcCourseHandicap(p.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
+        const holes = roundHolesMap[s.round_id] || [];
+        const hcStrokes = distributeHandicapStrokes(ch, holes);
+        netStrokes = s.strokes - (hcStrokes[s.hole_number] || 0);
+
+        // Stableford points calculation
+        let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
+        if (round.joker_hole && s.hole_number === round.joker_hole) pts *= 2;
+        if (!roundTotals[s.round_id]) roundTotals[s.round_id] = 0;
+        roundTotals[s.round_id] += pts;
+      }
+
+      // Use net score vs par for accurate eagle/birdie/par/bogey stats
+      const diff = netStrokes - hole.par;
+      if (s.strokes === 1) hio++; // Hole in one always counts
       else if (diff <= -3) albatross++;
       else if (diff === -2) eagles++;
       else if (diff === -1) birdies++;
       else if (diff === 0) pars++;
       else if (diff === 1) bogeys++;
       else dblPlus++;
-
-      // Stableford with handicap
-      const round = roundMap[s.round_id];
-      if (round) {
-        const ch = calcCourseHandicap(p.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
-        const holes = roundHolesMap[s.round_id] || [];
-        const hcStrokes = distributeHandicapStrokes(ch, holes);
-        let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
-        if (round.joker_hole && s.hole_number === round.joker_hole) pts *= 2;
-        if (!roundTotals[s.round_id]) roundTotals[s.round_id] = 0;
-        roundTotals[s.round_id] += pts;
-      }
     }
 
     const totalPts = Object.values(roundTotals).reduce((a, b) => a + b, 0);

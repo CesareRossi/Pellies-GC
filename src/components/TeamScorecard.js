@@ -135,16 +135,20 @@ const TeamScorecard = ({ data, title, jokerHole = null, beerHole = null, mode = 
     return <span className={`text-xs sm:text-sm font-bold ${style.text}`}>{value}</span>;
   };
 
-  // Format team names for display (truncate if too long)
+  // Format team names for display - returns JSX for multi-line if needed
   const formatTeamName = (name) => {
-    if (name.length <= 30) return name;
     const parts = name.split(' and ');
     if (parts.length === 2) {
-      const p1 = parts[0].length > 15 ? parts[0].substring(0, 12) + '...' : parts[0];
-      const p2 = parts[1].length > 15 ? parts[1].substring(0, 12) + '...' : parts[1];
-      return `${p1} & ${p2}`;
+      // Return multi-line format for team names
+      return (
+        <div className="flex flex-col leading-tight">
+          <span>{parts[0]}</span>
+          <span className="text-[#A9C5B4] text-[10px]">and</span>
+          <span>{parts[1]}</span>
+        </div>
+      );
     }
-    return name.substring(0, 28) + '...';
+    return <span className="truncate">{name}</span>;
   };
 
   return (
@@ -209,7 +213,7 @@ const TeamScorecard = ({ data, title, jokerHole = null, beerHole = null, mode = 
         {/* Par Row */}
         <div className="relative bg-[#0A2518] border-b border-[#D4AF37]/20">
           <div className="grid grid-cols-13">
-            <div className="sticky left-0 z-20 px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-sans text-[#A9C5B4] uppercase tracking-wider border-r border-[#D4AF37]/20 bg-[#0A2518]">PAR</div>
+            <div className="sticky left-0 z-20 px-2 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs font-sans text-[#A9C5B4] uppercase tracking-wider border-r border-[#D4AF37]/20" style={{backgroundColor: '#0A2518'}}>PAR</div>
             {front9Holes.map(hole => (
               <div key={hole.Team} className="px-1 sm:px-2 py-1.5 sm:py-2 text-center text-xs sm:text-sm font-semibold text-white border-r border-[#D4AF37]/20">
                 {hole.Par}
@@ -237,7 +241,7 @@ const TeamScorecard = ({ data, title, jokerHole = null, beerHole = null, mode = 
           <div key={team} className={`relative ${teamIndex % 2 === 0 ? 'bg-[#0F2C1D]/40' : 'bg-[#051A10]/20'} border-b border-[#D4AF37]/10 last:border-b-0`}>
             <div className="grid grid-cols-13">
               <div className="sticky left-0 z-10 px-2 sm:px-3 py-2 sm:py-3 text-xs sm:text-sm font-semibold text-white border-r border-[#D4AF37]/20 flex items-center" style={{backgroundColor: teamIndex % 2 === 0 ? '#0F2C1D' : '#0A1F14'}} title={team}>
-                <span className="truncate max-w-[100px] sm:max-w-[140px]">{formatTeamName(team)}</span>
+                {formatTeamName(team)}
               </div>
               {/* Front 9 holes */}
               {front9Holes.map(hole => (
