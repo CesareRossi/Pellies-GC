@@ -657,7 +657,7 @@ async function fetchHolesForRounds(rounds) {
   return { holesMap, roundHolesMap };
 }
 
-export async function getLeaderboardData() {
+export async function getLeaderboardData(mode = 'stableford') {
   const [rounds, players, scoresRes] = await Promise.all([
     getSetUpRounds(),
     getPlayers(),
@@ -675,36 +675,94 @@ export async function getLeaderboardData() {
       const handicapStrokes = distributeHandicapStrokes(courseHandicap, holes);
 
       const pScores = (allScores || []).filter(s => s.player_id === p.id && s.round_id === r.id);
-      let roundTotal = 0;
-      for (const s of pScores) {
-        const hole = holesMap[`${s.round_id}_${s.hole_number}`];
-        if (!hole) continue;
-        const hcStrokes = handicapStrokes[s.hole_number] || 0;
-        let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes);
-        // 🎭 Joker Hole: double points on the admin-designated hole for this round
-        pts = applyJoker(pts, s.hole_number, r.joker_hole);
-        roundTotal += pts;
+      const totalHoles = holes.length;
+      const uniqueHolesScored = new Set(pScores.map(s => s.hole_number)).size;
+      const roundComplete = totalHoles > 0 && uniqueHolesScored === totalHoles;
+      
+      // Only count this round if the player has completed all holes
+      if (!roundComplete) continue;
+      
+      if (mode === 'stroke') {
+        // Stroke Play: sum of strokes, with handicap adjustment on ALL rounds
+        let grossStrokes = 0;
+        let netStrokes = 0;
+        for (const s of pScores) {
+          grossStrokes += s.strokes || 0;
+          // Apply handicap strokes on ALL rounds
+          const hcStrokes = handicapStrokes[s.hole_number] || 0;
+          netStrokes += Math.max(0, (s.strokes || 0) - hcStrokes);
+        }
+        // Store net strokes for total, show gross (net) in details for all rounds
+        playerRoundTotals[p.id][r.id] = { 
+          net: netStrokes, 
+          gross: grossStrokes,
+          display: `${grossStrokes} (${netStrokes})`
+        };
+      } else {
+        // Stableford (default)
+        let roundTotal = 0;
+        for (const s of pScores) {
+          const hole = holesMap[`${s.round_id}_${s.hole_number}`];
+          if (!hole) continue;
+          const hcStrokes = handicapStrokes[s.hole_number] || 0;
+          let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes);
+          // 🎭 Joker Hole: double points on the admin-designated hole for this round
+          pts = applyJoker(pts, s.hole_number, r.joker_hole);
+          roundTotal += pts;
+        }
+        playerRoundTotals[p.id][r.id] = { net: roundTotal, gross: roundTotal, display: roundTotal };
       }
-      if (pScores.length > 0) playerRoundTotals[p.id][r.id] = roundTotal;
     }
   }
 
   const leaderboard = players.map(p => {
     const roundScores = playerRoundTotals[p.id] || {};
-    const total = Object.values(roundScores).reduce((a, b) => a + b, 0);
+    const roundScoresArray = Object.values(roundScores);
+    const total = roundScoresArray.reduce((a, b) => a + b.net, 0);
+    const roundsPlayed = roundScoresArray.length;
+    const average = roundsPlayed > 0 ? total / roundsPlayed : 0;
+    const hasScores = roundsPlayed > 0;
     const roundDetails = {};
     for (const r of rounds) {
-      roundDetails[r.courses?.name || `Round ${r.round_number}`] = roundScores[r.id] || 0;
+      const score = roundScores[r.id];
+      roundDetails[r.courses?.name || `Round ${r.round_number}`] = score ? score.display : (mode === 'stroke' ? '-' : 0);
     }
+    // Return only fields needed for display (exclude internal sorting fields)
     return { player: p.name, ...roundDetails, total };
   });
 
-  leaderboard.sort((a, b) => b.total - a.total);
+  if (mode === 'stroke') {
+    // Stroke play: prioritize players with scores, then by total (ascending)
+    // For individual stroke play, round scores are strings like "85 (78)" or "-"
+    leaderboard.sort((a, b) => {
+      const aRoundKeys = Object.keys(a).filter(k => k !== 'player' && k !== 'total');
+      const bRoundKeys = Object.keys(b).filter(k => k !== 'player' && k !== 'total');
+      // Check if player has actual round scores (strings that are not '-' and contain numbers)
+      const aHasScores = aRoundKeys.some(k => {
+        const val = a[k];
+        return val !== '-' && val !== '' && typeof val === 'string' && /\d/.test(val);
+      });
+      const bHasScores = bRoundKeys.some(k => {
+        const val = b[k];
+        return val !== '-' && val !== '' && typeof val === 'string' && /\d/.test(val);
+      });
+      // Players with scores come first
+      if (aHasScores && !bHasScores) return -1;
+      if (!aHasScores && bHasScores) return 1;
+      // Both have scores: sort by total (lower is better for stroke play)
+      if (aHasScores && bHasScores) return a.total - b.total;
+      // Neither has scores: maintain original order
+      return 0;
+    });
+  } else {
+    // Stableford: higher is better, sort descending
+    leaderboard.sort((a, b) => b.total - a.total);
+  }
   assignTiedRanks(leaderboard, 'total');
   return { leaderboard: withRankFirst(leaderboard), rounds };
 }
 
-export async function getTeamLeaderboardData() {
+export async function getTeamLeaderboardData(mode = 'stableford') {
   const [rounds, players, teamsRes, scoresRes] = await Promise.all([
     getSetUpRounds(),
     getPlayers(),
@@ -716,11 +774,11 @@ export async function getTeamLeaderboardData() {
   const allScores = scoresRes.data;
   const { holesMap, roundHolesMap } = await fetchHolesForRounds(rounds);
 
-  // Stableford per player per round per hole (with handicap)
   const playerMap = {};
   for (const p of players) playerMap[p.id] = p;
 
-  const stabMap = {};
+  const strokeMap = {}; // For stroke play: stores gross strokes per player per hole
+  const stabMap = {}; // For stableford: stores points per player per hole
   const hcCache = {}; // key: roundId_playerId
 
   const roundMap = Object.fromEntries(rounds.map(r => [r.id, r]));
@@ -749,7 +807,15 @@ export async function getTeamLeaderboardData() {
     }
 
     const hcStrokes = hcCache[cacheKey];
-    let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
+    const grossStrokes = s.strokes || 0;
+    const hcStroke = hcStrokes[s.hole_number] || 0;
+    const netStrokes = Math.max(0, grossStrokes - hcStroke);
+    
+    // Store for stroke play
+    strokeMap[`${s.round_id}_${s.player_id}_${s.hole_number}`] = { gross: grossStrokes, net: netStrokes };
+    
+    // Store for stableford
+    let pts = calcStablefordPoints(grossStrokes, hole.par, hcStrokes[s.hole_number] || 0);
     // 🎭 Joker Hole doubles points (team leaderboard uses same hole-level points)
     if (round.joker_hole && s.hole_number === round.joker_hole) pts *= 2;
     stabMap[`${s.round_id}_${s.player_id}_${s.hole_number}`] = pts;
@@ -778,29 +844,113 @@ export async function getTeamLeaderboardData() {
 
   const teamLeaderboard = Object.values(teamPairsMap).map(team => {
     const roundScores = {};
-    let total = 0;
+    let totalNet = 0;
+    let totalGross = 0;
+    let roundsPlayed = 0;
     for (const r of rounds) {
-      if (!team.roundIds.has(r.id)) { roundScores[r.courses?.name || `R${r.round_number}`] = 0; continue; }
+      if (!team.roundIds.has(r.id)) { 
+        roundScores[r.courses?.name || `R${r.round_number}`] = mode === 'stroke' ? '-' : 0; 
+        continue; 
+      }
       const holes = roundHolesMap[r.id] || [];
-      let roundTotal = 0;
+      
+      // Check if BOTH players have completed all holes for this round
+      const p1HolesScored = holes.filter(h => strokeMap[`${r.id}_${team.p1Id}_${h.hole_number}`] || stabMap[`${r.id}_${team.p1Id}_${h.hole_number}`]).length;
+      const p2HolesScored = holes.filter(h => strokeMap[`${r.id}_${team.p2Id}_${h.hole_number}`] || stabMap[`${r.id}_${team.p2Id}_${h.hole_number}`]).length;
+      const totalHoles = holes.length;
+      const roundComplete = totalHoles > 0 && p1HolesScored === totalHoles && p2HolesScored === totalHoles;
+      
+      // Only count this round if both players have completed all holes
+      if (!roundComplete) {
+        roundScores[r.courses?.name || `R${r.round_number}`] = mode === 'stroke' ? '-' : 0;
+        continue;
+      }
+      
+      let roundNet = 0;
+      let roundGross = 0;
       for (const h of holes) {
         const p1key = `${r.id}_${team.p1Id}_${h.hole_number}`;
         const p2key = `${r.id}_${team.p2Id}_${h.hole_number}`;
 
-        const p1pts = stabMap[p1key];
-        const p2pts = stabMap[p2key];
-
-        if (p1pts == null && p2pts == null) continue;
-
-        roundTotal += Math.max(p1pts || 0, p2pts || 0);
+        if (mode === 'stroke') {
+          // Stroke Play: Best ball (lowest net strokes)
+          const p1 = strokeMap[p1key];
+          const p2 = strokeMap[p2key];
+          const p1net = p1?.net ?? 999;
+          const p2net = p2?.net ?? 999;
+          const p1gross = p1?.gross ?? 999;
+          const p2gross = p2?.gross ?? 999;
+          
+          // Take the best (lowest) net score between the two players
+          roundNet += Math.min(p1net, p2net);
+          roundGross += Math.min(p1gross, p2gross);
+        } else {
+          // Stableford: Best ball (highest points)
+          const p1pts = stabMap[p1key] || 0;
+          const p2pts = stabMap[p2key] || 0;
+          roundNet += Math.max(p1pts, p2pts);
+          roundGross += Math.max(p1pts, p2pts);
+        }
       }
-      roundScores[r.courses?.name || `R${r.round_number}`] = roundTotal;
-      total += roundTotal;
+      
+      if (mode === 'stroke') {
+        // Show gross (net) for all rounds in stroke play
+        roundScores[r.courses?.name || `R${r.round_number}`] = `${roundGross} (${roundNet})`;
+      } else {
+        roundScores[r.courses?.name || `R${r.round_number}`] = roundNet;
+      }
+      
+      totalNet += roundNet;
+      totalGross += roundGross;
+      roundsPlayed++;
     }
-    return { player: team.name, ...roundScores, total };
+    // Return only fields needed for display
+    return { 
+      player: team.name, 
+      ...roundScores, 
+      total: totalNet
+    };
   });
 
-  teamLeaderboard.sort((a, b) => b.total - a.total);
+  if (mode === 'stroke') {
+    // Stroke play: prioritize teams with scores, then by total (ascending)
+    // For team stroke play, round scores are strings like "72 (65)" or "-"
+    teamLeaderboard.sort((a, b) => {
+      const aRoundKeys = Object.keys(a).filter(k => k !== 'player' && k !== 'total');
+      const bRoundKeys = Object.keys(b).filter(k => k !== 'player' && k !== 'total');
+      // Check if team has actual round scores (strings that are not '-' and contain numbers)
+      const aHasScores = aRoundKeys.some(k => {
+        const val = a[k];
+        return val !== '-' && val !== '' && typeof val === 'string' && /\d/.test(val);
+      });
+      const bHasScores = bRoundKeys.some(k => {
+        const val = b[k];
+        return val !== '-' && val !== '' && typeof val === 'string' && /\d/.test(val);
+      });
+      // Teams with scores come first
+      if (aHasScores && !bHasScores) return -1;
+      if (!aHasScores && bHasScores) return 1;
+      // Both have scores: sort by total (lower is better for stroke play)
+      if (aHasScores && bHasScores) return a.total - b.total;
+      // Neither has scores: maintain original order
+      return 0;
+    });
+  } else {
+    // Stableford: prioritize teams with scores, then by total (descending)
+    teamLeaderboard.sort((a, b) => {
+      const aRoundKeys = Object.keys(a).filter(k => k !== 'player' && k !== 'total');
+      const bRoundKeys = Object.keys(b).filter(k => k !== 'player' && k !== 'total');
+      const aHasScores = aRoundKeys.some(k => a[k] !== '-' && a[k] !== 0 && typeof a[k] === 'number' && a[k] > 0);
+      const bHasScores = bRoundKeys.some(k => b[k] !== '-' && b[k] !== 0 && typeof b[k] === 'number' && b[k] > 0);
+      // Teams with scores come first
+      if (aHasScores && !bHasScores) return -1;
+      if (!aHasScores && bHasScores) return 1;
+      // Both have scores: sort by total (higher is better for stableford)
+      if (aHasScores && bHasScores) return b.total - a.total;
+      // Neither has scores: maintain original order
+      return 0;
+    });
+  }
   assignTiedRanks(teamLeaderboard, 'total');
   return { leaderboard: withRankFirst(teamLeaderboard), rounds };
 }
@@ -1149,8 +1299,8 @@ async function holesForRound(round) {
   return rh || [];
 }
 
-// ===== STABLEFORD ROUND VIEW =====
-export async function getStablefordRoundData(roundId) {
+// ===== STABLEFORD/STROKE ROUND VIEW =====
+export async function getStablefordRoundData(roundId, mode = 'stableford') {
   try {
     const { data: round } = await supabase.from('rounds').select('*, courses(*)').eq('id', roundId).single();
     if (!round) {
@@ -1173,38 +1323,82 @@ export async function getStablefordRoundData(roundId) {
     const activeScores = scores.filter(s => activePlayerIds.has(s.player_id));
     const playerNames = [...new Set(activeScores.map(s => s.players.name))];
 
+  // Build maps for both stableford points and stroke play
   const stabMap = {};
+  const strokeMap = {}; // For stroke play: stores {gross, net}
+  const playerCourseHandicaps = {}; // Store course handicap per player
+  
   for (const s of activeScores) {
     const hole = holes.find(h => h.hole_number === s.hole_number);
     if (!hole) continue;
     const ch = calcCourseHandicap(s.players.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
     const hcStrokes = distributeHandicapStrokes(ch, holes);
+    
+    // Store course handicap for this player (only once per player)
+    if (!playerCourseHandicaps[s.players.name]) {
+      playerCourseHandicaps[s.players.name] = ch;
+    }
+    
+    // Calculate stableford points
     let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
     if (round.joker_hole && s.hole_number === round.joker_hole) pts *= 2;
     stabMap[`${s.players.name}_${s.hole_number}`] = pts;
+    
+    // Calculate stroke play values (with handicap adjustment)
+    const grossStrokes = s.strokes || 0;
+    const hcStroke = hcStrokes[s.hole_number] || 0;
+    const netStrokes = Math.max(0, grossStrokes - hcStroke);
+    strokeMap[`${s.players.name}_${s.hole_number}`] = { gross: grossStrokes, net: netStrokes };
   }
 
   const playerTotals = {};
   playerNames.forEach(p => {
-    playerTotals[p] = holes.reduce((sum, h) => sum + (stabMap[`${p}_${h.hole_number}`] || 0), 0);
+    if (mode === 'stroke') {
+      // Sum of net strokes for stroke play
+      playerTotals[p] = holes.reduce((sum, h) => {
+        const stroke = strokeMap[`${p}_${h.hole_number}`];
+        return sum + (stroke?.net || 0);
+      }, 0);
+    } else {
+      // Sum of stableford points
+      playerTotals[p] = holes.reduce((sum, h) => sum + (stabMap[`${p}_${h.hole_number}`] || 0), 0);
+    }
   });
-  const sortedPlayers = [...playerNames].sort((a, b) => (playerTotals[b] || 0) - (playerTotals[a] || 0));
+  
+  // Sort players - for stroke play lower is better, for stableford higher is better
+  const sortedPlayers = [...playerNames].sort((a, b) => {
+    if (mode === 'stroke') {
+      return (playerTotals[a] || 0) - (playerTotals[b] || 0);
+    }
+    return (playerTotals[b] || 0) - (playerTotals[a] || 0);
+  });
 
   const tableData = holes.map(h => {
-    const row = { Hole: h.hole_number, Par: h.par, SI: h.stroke_index };
-    for (const p of sortedPlayers) row[p] = stabMap[`${p}_${h.hole_number}`] ?? '';
+    const parValue = parseInt(h.par, 10) || parseInt(h.hole_par, 10) || 0;
+    const row = { Hole: h.hole_number, Par: parValue, SI: h.stroke_index };
+    for (const p of sortedPlayers) {
+      if (mode === 'stroke') {
+        const stroke = strokeMap[`${p}_${h.hole_number}`];
+        // For stroke play, show only net strokes (number)
+        row[p] = stroke ? stroke.net : '';
+      } else {
+        row[p] = stabMap[`${p}_${h.hole_number}`] ?? '';
+      }
+    }
     return row;
   });
+  
   const totalRow = { Hole: 'TOTAL', Par: holes.reduce((s, h) => s + h.par, 0), SI: '' };
   for (const p of sortedPlayers) totalRow[p] = playerTotals[p] || 0;
   tableData.push(totalRow);
 
   return {
-    name: `Stableford_${round.round_number}`,
-    display_name: `Stableford - ${round.courses?.name || `Round ${round.round_number}`}`,
+    name: mode === 'stroke' ? `Stroke_${round.round_number}` : `Stableford_${round.round_number}`,
+    display_name: `${mode === 'stroke' ? 'Stroke Play' : 'Stableford'} - ${round.courses?.name || `Round ${round.round_number}`}`,
     data: tableData,
     joker_hole: round.joker_hole,
     beer_hole: round.beer_hole,
+    player_handicaps: playerCourseHandicaps,
   };
   } catch (error) {
     return { name: '', display_name: '', data: [] };
@@ -1212,7 +1406,7 @@ export async function getStablefordRoundData(roundId) {
 }
 
 // ===== TEAM ROUND VIEW =====
-export async function getTeamRoundData(roundId) {
+export async function getTeamRoundData(roundId, mode = 'stableford') {
   const { data: round } = await supabase.from('rounds').select('*, courses(*)').eq('id', roundId).single();
   if (!round) return { name: '', display_name: '', data: [] };
   // Fetch per-round teams first; fall back to season teams if none
@@ -1239,36 +1433,126 @@ export async function getTeamRoundData(roundId) {
 
   if (!holes || holes.length === 0) return { name: '', display_name: '', data: [] };
 
+  // Build maps for both stableford points and stroke play
   const stabMap = {};
+  const strokeMap = {};
+  const playerCourseHandicaps = {}; // Store course handicap per player
+  
   for (const s of activeScores) {
     const hole = holes.find(h => h.hole_number === s.hole_number);
     if (!hole) continue;
     const ch = calcCourseHandicap(s.players.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
     const hcStrokes = distributeHandicapStrokes(ch, holes);
+    
+    // Store course handicap for this player (keyed by player_id for teams)
+    if (!playerCourseHandicaps[s.player_id]) {
+      playerCourseHandicaps[s.player_id] = { name: s.players.name, handicap: ch };
+    }
+    
+    // Calculate stableford points
     let pts = calcStablefordPoints(s.strokes, hole.par, hcStrokes[s.hole_number] || 0);
     if (round.joker_hole && s.hole_number === round.joker_hole) {
       pts *= 2;
     }
     stabMap[`${s.player_id}_${s.hole_number}`] = pts;
+    
+    // Calculate stroke play values (with handicap adjustment)
+    const grossStrokes = s.strokes || 0;
+    const hcStroke = hcStrokes[s.hole_number] || 0;
+    const netStrokes = Math.max(0, grossStrokes - hcStroke);
+    strokeMap[`${s.player_id}_${s.hole_number}`] = { gross: grossStrokes, net: netStrokes };
   }
 
-  const teamNames = teams.map(t => ({ name: `${t.player1?.name} and ${t.player2?.name}`, p1: t.player1?.id, p2: t.player2?.id }));
+  const teamNames = teams.map(t => ({ 
+    name: `${t.player1?.name} and ${t.player2?.name}`, 
+    p1: t.player1?.id, 
+    p2: t.player2?.id,
+    p1Name: t.player1?.name,
+    p2Name: t.player2?.name,
+    p1Handicap: playerCourseHandicaps[t.player1?.id]?.handicap || 0,
+    p2Handicap: playerCourseHandicaps[t.player2?.id]?.handicap || 0
+  }));
   const teamTotals = {};
 
   const tableData = holes.map(h => {
-    const holeRow = { Team: `H${h.hole_number}` };
+    // Debug: log hole properties to check what par field is available
+    // console.log('Hole data:', h);
+    const parValue = parseInt(h.par, 10) || parseInt(h.hole_par, 10) || 0;
+    const holeRow = { Team: `H${h.hole_number}`, Par: parValue };
     for (const t of teamNames) {
-      const p1pts = stabMap[`${t.p1}_${h.hole_number}`] || 0;
-      const p2pts = stabMap[`${t.p2}_${h.hole_number}`] || 0;
-      holeRow[t.name] = Math.max(p1pts, p2pts);
-      teamTotals[t.name] = (teamTotals[t.name] || 0) + Math.max(p1pts, p2pts);
+      if (mode === 'stroke') {
+        // Stroke Play: best ball (lowest net strokes)
+        const p1 = strokeMap[`${t.p1}_${h.hole_number}`];
+        const p2 = strokeMap[`${t.p2}_${h.hole_number}`];
+        const p1net = p1?.net ?? 999;
+        const p2net = p2?.net ?? 999;
+        
+        if (p1net === 999 && p2net === 999) {
+          holeRow[t.name] = '';
+          holeRow[`${t.name}_contributor`] = '';
+        } else {
+          const bestNet = Math.min(p1net, p2net);
+          // Show only net strokes for stroke play
+          holeRow[t.name] = bestNet;
+          // Indicate which player contributed (1 or 2)
+          if (p1net < p2net) {
+            holeRow[`${t.name}_contributor`] = '1';
+          } else if (p2net < p1net) {
+            holeRow[`${t.name}_contributor`] = '2';
+          } else {
+            holeRow[`${t.name}_contributor`] = 'T'; // Tie
+          }
+          teamTotals[t.name] = (teamTotals[t.name] || 0) + bestNet;
+        }
+      } else {
+        // Stableford: best ball (highest points)
+        const p1pts = stabMap[`${t.p1}_${h.hole_number}`] ?? null;
+        const p2pts = stabMap[`${t.p2}_${h.hole_number}`] ?? null;
+        
+        if (p1pts === null && p2pts === null) {
+          // No scores entered for this hole
+          holeRow[t.name] = '';
+          holeRow[`${t.name}_contributor`] = '';
+        } else {
+          const bestPts = Math.max(p1pts || 0, p2pts || 0);
+          holeRow[t.name] = bestPts;
+          // Indicate which player contributed (1, 2, or T for tie)
+          if (p1pts > p2pts) {
+            holeRow[`${t.name}_contributor`] = '1';
+          } else if (p2pts > p1pts) {
+            holeRow[`${t.name}_contributor`] = '2';
+          } else {
+            holeRow[`${t.name}_contributor`] = 'T'; // Tie
+          }
+          teamTotals[t.name] = (teamTotals[t.name] || 0) + bestPts;
+        }
+      }
     }
     return holeRow;
   });
 
-  const sortedTeams = [...teamNames].sort((a, b) => (teamTotals[b.name] || 0) - (teamTotals[a.name] || 0));
+  // Sort teams - for stroke play lower is better, for stableford higher is better
+  // For stroke play: prioritize teams with scores, then sort by total ascending
+  const sortedTeams = [...teamNames].sort((a, b) => {
+    const aHasScores = teamTotals[a.name] > 0;
+    const bHasScores = teamTotals[b.name] > 0;
+    
+    if (mode === 'stroke') {
+      // Teams with scores come first
+      if (aHasScores && !bHasScores) return -1;
+      if (!aHasScores && bHasScores) return 1;
+      // Both have scores: sort by total (lower is better)
+      if (aHasScores && bHasScores) return teamTotals[a.name] - teamTotals[b.name];
+      // Neither has scores: maintain original order
+      return 0;
+    } else {
+      // Stableford: higher is better
+      return (teamTotals[b.name] || 0) - (teamTotals[a.name] || 0);
+    }
+  });
+  
   const sortedData = tableData.map(row => {
-    const newRow = { Team: row.Team };
+    const newRow = { Team: row.Team, Par: row.Par };
     for (const t of sortedTeams) newRow[t.name] = row[t.name];
     return newRow;
   });
@@ -1276,12 +1560,22 @@ export async function getTeamRoundData(roundId) {
   for (const t of sortedTeams) totalRow[t.name] = teamTotals[t.name] || 0;
   sortedData.push(totalRow);
 
+  // Build team handicaps object for display
+  const teamHandicaps = {};
+  for (const t of teamNames) {
+    teamHandicaps[t.name] = {
+      p1: { name: t.p1Name, handicap: t.p1Handicap },
+      p2: { name: t.p2Name, handicap: t.p2Handicap }
+    };
+  }
+
   return {
-    name: `Teams_${round.round_number}`,
-    display_name: `Teams - ${round.courses?.name || `Round ${round.round_number}`}`,
+    name: mode === 'stroke' ? `Teams_Stroke_${round.round_number}` : `Teams_${round.round_number}`,
+    display_name: `${mode === 'stroke' ? 'Teams Stroke Play' : 'Teams'} - ${round.courses?.name || `Round ${round.round_number}`}`,
     data: sortedData,
     joker_hole: round.joker_hole,
     beer_hole: round.beer_hole,
+    player_handicaps: teamHandicaps,
   };
 }
 

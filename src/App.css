@@ -134,10 +134,14 @@ html {
     min-width: 700px;
   }
   
-  .golf-scorecard .grid-cols-13,
-  .team-scorecard .grid-cols-13 {
+  .golf-scorecard .grid-cols-13 {
     grid-template-columns: 70px repeat(9, minmax(0, 1fr)) repeat(9, minmax(0, 1fr)) 45px 45px 45px;
     min-width: 750px;
+  }
+  
+  .team-scorecard .grid-cols-13 {
+    grid-template-columns: 110px repeat(9, minmax(0, 1fr)) repeat(9, minmax(0, 1fr)) 45px 45px 45px;
+    min-width: 790px;
   }
   
   .golf-scorecard .px-3,
@@ -164,10 +168,14 @@ html {
     min-width: 650px;
   }
   
-  .golf-scorecard .grid-cols-13,
-  .team-scorecard .grid-cols-13 {
+  .golf-scorecard .grid-cols-13 {
     grid-template-columns: 60px repeat(9, minmax(0, 1fr)) repeat(9, minmax(0, 1fr)) 40px 40px 40px;
     min-width: 800px;
+  }
+  
+  .team-scorecard .grid-cols-13 {
+    grid-template-columns: 100px repeat(9, minmax(0, 1fr)) repeat(9, minmax(0, 1fr)) 40px 40px 40px;
+    min-width: 840px;
   }
   
   .golf-scorecard .px-2,

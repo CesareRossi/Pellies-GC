@@ -134,7 +134,7 @@ const Overview = ({data, onNav, archivedSeasons = [], onShareRecap}) => {
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <QN icon={<Trophy size={24}/>} title="Leaderboards" desc="Rankings" onClick={()=>onNav('league_lb')}/>
-        <QN icon={<ChartLine size={24}/>} title="Stableford" desc="Round scores" onClick={()=>onNav('stableford')}/>
+        <QN icon={<ChartLine size={24}/>} title="Individual Rounds" desc="Round scores" onClick={()=>onNav('stableford')}/>
         <QN icon={<UsersThree size={24}/>} title="Teams" desc="Team scoring" onClick={()=>onNav('teams')}/>
         <QN icon={<User size={24}/>} title="Player Stats" desc="Breakdowns" onClick={()=>onNav('stats')}/>
       </div>
@@ -312,6 +312,7 @@ const ScoreEntry = ({rounds, players, userId}) => {
 
   useEffect(() => {
     if(!selectedRound) return;
+    setHoles([]); // Clear holes while loading
     db.getHolesForRound(selectedRound).then(setHoles).catch(()=>setHoles([]));
     setSelectedPlayer(null); setScores({});
   }, [selectedRound]);
@@ -466,6 +467,7 @@ function App() {
   const [awards, setAwards] = useState(null);
   const [sheetData, setSheetData] = useState(null);
   const [scorecardLoading, setScorecardLoading] = useState(false);
+  const [leaderboardMode, setLeaderboardMode] = useState('stableford'); // 'stableford' | 'stroke'
   const [rounds, setRounds] = useState([]);
   const [players, setPlayers] = useState([]);
   const [currentSeason, setCurrentSeason] = useState(null);
@@ -522,16 +524,16 @@ function App() {
     const safety = setTimeout(() => setLoading(false), 15000);
     try {
       if (v === 'overview') { setOverview(await db.getSeasonOverview()); }
-      else if (v === 'league_lb') { setLeaderboard(await db.getLeaderboardData()); }
-      else if (v === 'team_lb') { setTeamLb(await db.getTeamLeaderboardData()); }
+      else if (v === 'league_lb') { setLeaderboard(await db.getLeaderboardData(leaderboardMode)); }
+      else if (v === 'team_lb') { setTeamLb(await db.getTeamLeaderboardData(leaderboardMode)); }
       else if (v === 'stats') { setPlayerStats(await db.getPlayerStats()); }
       else if (v === 'awards') { setAwards(await db.getAwards()); }
       else if (v === 'stableford' && param) { 
-        const data = await db.getStablefordRoundData(param);
+        const data = await db.getStablefordRoundData(param, leaderboardMode);
         setSheetData(data); 
       }
       else if (v === 'teams' && param) { 
-        const data = await db.getTeamRoundData(param);
+        const data = await db.getTeamRoundData(param, leaderboardMode);
         setSheetData(data); 
       }
       setLastUpdated(new Date().toISOString());
@@ -542,9 +544,9 @@ function App() {
       clearTimeout(safety); 
       setLoading(false); 
     }
-  }, []);
+  }, [leaderboardMode]);
 
-  useEffect(() => { loadView(view, viewParam); }, [view, viewParam, loadView]);
+  useEffect(() => { loadView(view, viewParam); }, [view, viewParam, loadView, leaderboardMode]);
 
   const navigate = (v, param) => { 
     // Clear sheetData when navigating to scorecards to prevent showing old data
@@ -625,7 +627,7 @@ function App() {
     ...(isAdmin ? [{ id: 'season_wizard', label: 'Season Setup' }, { id: 'admin', label: 'Admin' }] : []),
   ];
 
-  const stabItems = useMemo(() => rounds.map(r=>({id: r.id, label: `Stableford - ${r.courses?.name || 'Round ' + r.round_number}`})), [rounds]);
+  const stabItems = useMemo(() => rounds.map(r=>({id: r.id, label: `Individual - ${r.courses?.name || 'Round ' + r.round_number}`})), [rounds]);
   const teamItems = useMemo(() => rounds.map(r=>({id: r.id, label: `Teams - ${r.courses?.name || 'Round ' + r.round_number}`})), [rounds]);
   const mobilePrimaryItems = [
     { id: 'overview', label: 'Overview' },
@@ -675,15 +677,84 @@ function App() {
       );
     }
     if ((view === 'league_lb' || view === 'team_lb') && (leaderboard || teamLb)) {
+      const isTeam = view === 'team_lb';
+      const title = isTeam ? 'Team Leaderboard' : 'League Leaderboard';
+      const modeLabel = leaderboardMode === 'stableford' ? 'Stableford' : 'Stroke Play';
       return (
-        <motion.div key={view} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
-          <DataTable data={view==='league_lb'?leaderboard?.leaderboard:teamLb?.leaderboard}/>
+        <motion.div key={view} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
+          <div className="flex items-center justify-between bg-[#0F2C1D]/90 rounded-xl border border-[#D4AF37]/20 p-4">
+            <h2 className="text-xl font-serif text-[#D4AF37]">{title}</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#A9C5B4]">Mode:</span>
+              <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20">
+                <button
+                  onClick={() => setLeaderboardMode('stableford')}
+                  className={`px-3 py-1.5 text-xs rounded-md transition-all ${
+                    leaderboardMode === 'stableford'
+                      ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                      : 'text-[#A9C5B4] hover:text-white'
+                  }`}
+                >
+                  Stableford
+                </button>
+                <button
+                  onClick={() => setLeaderboardMode('stroke')}
+                  className={`px-3 py-1.5 text-xs rounded-md transition-all ${
+                    leaderboardMode === 'stroke'
+                      ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                      : 'text-[#A9C5B4] hover:text-white'
+                  }`}
+                >
+                  Stroke Play
+                </button>
+              </div>
+            </div>
+          </div>
+          {leaderboardMode === 'stroke' && (
+            <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
+              <span className="text-[#D4AF37]">ℹ️</span> Stroke Play shows gross strokes with handicap-adjusted net score in parentheses (all rounds).
+            </div>
+          )}
+          <DataTable data={isTeam ? teamLb?.leaderboard : leaderboard?.leaderboard}/>
         </motion.div>
       );
     }
     if (view === 'stableford' && sheetData) {
       return (
-        <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
+        <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
+          <div className="flex items-center justify-between bg-[#0F2C1D]/90 rounded-xl border border-[#D4AF37]/20 p-4">
+            <h2 className="text-xl font-serif text-[#D4AF37]">{sheetData?.display_name}</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#A9C5B4]">Mode:</span>
+              <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20">
+                <button
+                  onClick={() => setLeaderboardMode('stableford')}
+                  className={`px-3 py-1.5 text-xs rounded-md transition-all ${
+                    leaderboardMode === 'stableford'
+                      ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                      : 'text-[#A9C5B4] hover:text-white'
+                  }`}
+                >
+                  Stableford
+                </button>
+                <button
+                  onClick={() => setLeaderboardMode('stroke')}
+                  className={`px-3 py-1.5 text-xs rounded-md transition-all ${
+                    leaderboardMode === 'stroke'
+                      ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                      : 'text-[#A9C5B4] hover:text-white'
+                  }`}
+                >
+                  Stroke Play
+                </button>
+              </div>
+            </div>
+          </div>
+          {leaderboardMode === 'stroke' && (
+            <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
+              <span className="text-[#D4AF37]">ℹ️</span> Stroke Play shows gross strokes with handicap-adjusted net score in parentheses (all rounds).
+            </div>
+          )}
           <ErrorBoundary>
             <GolfScorecard 
               data={sheetData?.data} 
@@ -691,6 +762,8 @@ function App() {
               currentUser={user?.name}
               jokerHole={sheetData?.joker_hole}
               beerHole={sheetData?.beer_hole}
+              mode={leaderboardMode}
+              playerHandicaps={sheetData?.player_handicaps}
             />
           </ErrorBoundary>
         </motion.div>
@@ -698,12 +771,47 @@ function App() {
     }
     if (view === 'teams' && sheetData) {
       return (
-        <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
+        <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
+          <div className="flex items-center justify-between bg-[#0F2C1D]/90 rounded-xl border border-[#D4AF37]/20 p-4">
+            <h2 className="text-xl font-serif text-[#D4AF37]">{sheetData?.display_name}</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#A9C5B4]">Mode:</span>
+              <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20">
+                <button
+                  onClick={() => setLeaderboardMode('stableford')}
+                  className={`px-3 py-1.5 text-xs rounded-md transition-all ${
+                    leaderboardMode === 'stableford'
+                      ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                      : 'text-[#A9C5B4] hover:text-white'
+                  }`}
+                >
+                  Stableford
+                </button>
+                <button
+                  onClick={() => setLeaderboardMode('stroke')}
+                  className={`px-3 py-1.5 text-xs rounded-md transition-all ${
+                    leaderboardMode === 'stroke'
+                      ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                      : 'text-[#A9C5B4] hover:text-white'
+                  }`}
+                >
+                  Stroke Play
+                </button>
+              </div>
+            </div>
+          </div>
+          {leaderboardMode === 'stroke' && (
+            <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
+              <span className="text-[#D4AF37]">ℹ️</span> Stroke Play shows gross strokes with handicap-adjusted net score in parentheses (all rounds).
+            </div>
+          )}
           <TeamScorecard 
             data={sheetData?.data} 
             title={sheetData?.display_name} 
             jokerHole={sheetData?.joker_hole}
             beerHole={sheetData?.beer_hole}
+            mode={leaderboardMode}
+            playerHandicaps={sheetData?.player_handicaps}
           />
         </motion.div>
       );
@@ -753,8 +861,8 @@ function App() {
                 <div className="flex items-center gap-1.5">
                   <button onClick={()=>navigate('overview')} className={primaryNavBtnClass(view==='overview')}><Gauge size={17} weight="duotone"/><span>Overview</span></button>
                   <NavDropdown label="Leaderboards" icon={<Trophy size={17} weight="duotone"/>} items={[{id:'league_lb',label:'League Leaderboard'},{id:'team_lb',label:'Team Leaderboard'}]} activeId={view==='league_lb'||view==='team_lb'?view:null} onSelect={id=>navigate(id)} testId="nav-lb"/>
-                  {stabItems.length>0&&<NavDropdown label="Stableford" icon={<ChartLine size={17} weight="duotone"/>} items={stabItems} activeId={view==='stableford'?viewParam:null} onSelect={id=>navigate('stableford',id)} testId="nav-stab"/>}
-                  {teamItems.length>0&&<NavDropdown label="Team Rounds" icon={<UsersThree size={17} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-teams"/>}
+                  {stabItems.length>0&&<NavDropdown label="Individual Rounds" icon={<ChartLine size={17} weight="duotone"/>} items={stabItems} activeId={view==='stableford'?viewParam:null} onSelect={id=>navigate('stableford',id)} testId="nav-stab"/>}
+                  {teamItems.length>0&&<NavDropdown label="Teams Round" icon={<UsersThree size={17} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-teams"/>}
                 </div>
                 <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-[#D4AF37]/20">
                   {quickMenuItems.length>0&&<NavDropdown label="Manage" icon={<Gear size={15} weight="duotone"/>} items={quickMenuItems} activeId={quickMenuActiveViews.has(view)?view:null} onSelect={id=>navigate(id)} testId="nav-menu"/>}
@@ -764,8 +872,8 @@ function App() {
                 <div className="grid grid-cols-2 gap-2">
                   <NavDropdown label="Play" icon={<Gauge size={16} weight="duotone"/>} items={mobilePrimaryItems} activeId={['overview','league_lb','team_lb'].includes(view)?view:null} onSelect={id=>navigate(id)} testId="nav-mobile-primary"/>
                   {quickMenuItems.length>0&&<NavDropdown label="Manage" icon={<Gear size={16} weight="duotone"/>} items={quickMenuItems} activeId={quickMenuActiveViews.has(view)?view:null} onSelect={id=>navigate(id)} testId="nav-mobile-menu"/>}
-                  {stabItems.length>0&&<NavDropdown label="Stableford" icon={<ChartLine size={16} weight="duotone"/>} items={stabItems} activeId={view==='stableford'?viewParam:null} onSelect={id=>navigate('stableford',id)} testId="nav-mobile-stab"/>}
-                  {teamItems.length>0&&<NavDropdown label="Team Rounds" icon={<UsersThree size={16} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-mobile-teams"/>}
+                  {stabItems.length>0&&<NavDropdown label="Individual" icon={<ChartLine size={16} weight="duotone"/>} items={stabItems} activeId={view==='stableford'?viewParam:null} onSelect={id=>navigate('stableford',id)} testId="nav-mobile-stab"/>}
+                  {teamItems.length>0&&<NavDropdown label="Teams" icon={<UsersThree size={16} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-mobile-teams"/>}
                 </div>
               </div>
             </nav>
