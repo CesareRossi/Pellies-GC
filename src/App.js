@@ -83,7 +83,7 @@ const PlayerCard = ({ player, index }) => {
   return (
     <motion.div initial={{opacity:0,y:30}} animate={{opacity:1,y:0}} transition={{duration:0.4,delay:index*0.08}} data-testid={`player-card-${player.name.toLowerCase().replace(/\s+/g,'-')}`} className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md overflow-hidden shadow-2xl hover:border-[#D4AF37]/40 transition-all duration-300">
       <div className="p-5 pb-4 border-b border-[#D4AF37]/10"><div className="flex items-center justify-between">
-        <div className="flex items-center gap-3"><div className={`w-10 h-10 rounded-full bg-gradient-to-br ${rc(player.rank)} flex items-center justify-center text-[#051A10] font-bold text-sm shadow-lg`}>{player.rank||'-'}</div><div><h3 className="text-lg font-serif text-white tracking-tight">{player.name}</h3><p className="text-xs text-[#A9C5B4]">{player.rounds_played} round{player.rounds_played!==1?'s':''}</p></div></div>
+        <div className="flex items-center gap-3"><div className={`w-10 h-10 rounded-full bg-gradient-to-br ${rc(player.rank)} flex items-center justify-center text-[#051A10] font-bold text-sm shadow-lg`}>{player.rank||'-'}</div><div><h3 className="text-lg font-sans text-white tracking-tight">{player.name}</h3><p className="text-xs text-[#A9C5B4]">{player.rounds_played} round{player.rounds_played!==1?'s':''}</p></div></div>
         <div className="text-right"><p className="text-2xl font-bold text-[#D4AF37]">{player.total_points}</p><p className="text-xs text-[#A9C5B4] tracking-wider uppercase">Pts</p></div>
       </div></div>
       <div className="p-5 grid grid-cols-3 gap-3">
@@ -112,7 +112,7 @@ const Overview = ({data, onNav, archivedSeasons = [], onShareRecap}) => {
   const po=[1,0,2], ph=['h-28','h-36','h-24'], pc=['from-[#C0C0C0] to-[#A0A0A0]','from-[#D4AF37] to-[#B8860B]','from-[#CD7F32] to-[#A0522D]'], pl=['2nd','1st','3rd'];
   return (
     <motion.div initial={{opacity:0}} animate={{opacity:1}} data-testid="season-overview">
-      <div className="text-center mb-10"><h2 className="text-3xl sm:text-4xl font-serif text-[#D4AF37] mb-2">Season Overview</h2><p className="text-[#A9C5B4] text-sm">{data.total_courses} of {data.total_round_slots} rounds set up &middot; {data.active_players} active players</p></div>
+      <div className="text-center mb-10"><h2 className="text-3xl sm:text-4xl font-sans text-[#D4AF37] mb-2">Season Overview</h2><p className="text-[#A9C5B4] text-sm">{data.total_courses} of {data.total_round_slots} rounds set up &middot; {data.active_players} active players</p></div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
         <SC icon={<Users size={22} weight="duotone"/>} value={data.active_players} label="Active Players" sub={`of ${data.total_players} total`}/>
         <SC icon={<MapPin size={22} weight="duotone"/>} value={`${data.total_courses}/${data.total_round_slots}`} label="Rounds Set Up" sub={data.courses_played.join(', ')}/>
@@ -157,7 +157,7 @@ const Overview = ({data, onNav, archivedSeasons = [], onShareRecap}) => {
                   data-testid={`past-champion-${s.id}`}
                 >
                   <div className="flex items-baseline justify-between mb-3 gap-2">
-                    <p className="text-sm font-serif text-[#D4AF37] truncate">{s.name}</p>
+                    <p className="text-sm font-sans text-[#D4AF37] truncate">{s.name}</p>
                     {endYear && <span className="text-[10px] text-[#A9C5B4]/70 uppercase tracking-wider flex-shrink-0">{endYear}</span>}
                   </div>
                   <div className="space-y-1.5 text-xs">
@@ -280,7 +280,7 @@ const AuthModal = ({onSuccess, onClose}) => {
     <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="fixed inset-0 z-[100] flex items-center justify-center bg-[#051A10]/80 backdrop-blur-sm">
       <motion.div initial={{scale:0.9,y:20}} animate={{scale:1,y:0}} className="w-full max-w-sm mx-4 rounded-xl border border-[#D4AF37]/30 bg-[#0F2C1D] p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-serif text-[#D4AF37] flex items-center gap-2"><Lock size={20}/> {mode==='login'?'Sign In':'Register'}</h2>
+          <h2 className="text-xl font-sans text-[#D4AF37] flex items-center gap-2"><Lock size={20}/> {mode==='login'?'Sign In':'Register'}</h2>
           <button onClick={onClose} className="text-[#A9C5B4] hover:text-white"><X size={20}/></button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -352,7 +352,7 @@ const ScoreEntry = ({rounds, players, userId}) => {
 
   return (
     <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} data-testid="score-entry">
-      <div className="text-center mb-8"><h2 className="text-3xl font-serif text-[#D4AF37] mb-2">Score Entry</h2></div>
+      <div className="text-center mb-8"><h2 className="text-3xl font-sans text-[#D4AF37] mb-2">Score Entry</h2></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 max-w-2xl mx-auto">
         <div><label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Round</label>
           <select value={selectedRound||''} onChange={e=>setSelectedRound(e.target.value)} className="w-full px-4 py-3 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white focus:outline-none text-sm">
@@ -682,40 +682,41 @@ function App() {
     if ((view === 'league_lb' || view === 'team_lb') && (leaderboard || teamLb)) {
       const isTeam = view === 'team_lb';
       const title = isTeam ? 'Team Leaderboard' : 'League Leaderboard';
-      const modeLabel = leaderboardMode === 'stableford' ? 'Stableford' : 'Stroke Play';
       return (
         <motion.div key={view} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-[#0F2C1D]/90 rounded-xl border border-[#D4AF37]/20 p-4 gap-3 sm:gap-0">
-            <h2 className="text-xl font-serif text-[#D4AF37]">{title}</h2>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-[#A9C5B4] hidden sm:inline">Mode:</span>
-              <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20 w-full sm:w-auto">
-                <button
-                  onClick={() => setLeaderboardMode('stableford')}
-                  className={`px-2 sm:px-3 py-1.5 text-xs rounded-md transition-all flex-1 sm:flex-none ${
-                    leaderboardMode === 'stableford'
-                      ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                      : 'text-[#A9C5B4] hover:text-white'
-                  }`}
-                >
-                  Stableford
-                </button>
-                <button
-                  onClick={() => setLeaderboardMode('stroke')}
-                  className={`px-2 sm:px-3 py-1.5 text-xs rounded-md transition-all flex-1 sm:flex-none ${
-                    leaderboardMode === 'stroke'
-                      ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                      : 'text-[#A9C5B4] hover:text-white'
-                  }`}
-                >
-                  Stroke Play
-                </button>
-              </div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{title}</h2>
+            <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20 self-center sm:self-auto">
+              <button
+                onClick={() => setLeaderboardMode('stableford')}
+                className={`px-3 py-1.5 text-xs rounded-md transition-all w-24 ${
+                  leaderboardMode === 'stableford'
+                    ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                    : 'text-[#A9C5B4] hover:text-white'
+                }`}
+              >
+                Stableford
+              </button>
+              <button
+                onClick={() => setLeaderboardMode('stroke')}
+                className={`px-3 py-1.5 text-xs rounded-md transition-all w-24 ${
+                  leaderboardMode === 'stroke'
+                    ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                    : 'text-[#A9C5B4] hover:text-white'
+                }`}
+              >
+                Stroke
+              </button>
             </div>
           </div>
           {leaderboardMode === 'stroke' && (
             <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
-              <span className="text-[#D4AF37]">ℹ️</span> Stroke Play shows gross strokes with handicap-adjusted net score in parentheses (all rounds).
+              <span className="text-[#D4AF37]">ℹ️</span> Stroke Play shows gross strokes with handicap-adjusted net score.
+            </div>
+          )}
+          {leaderboardMode === 'stableford' && (
+            <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
+              <span className="text-[#D4AF37]">ℹ️</span> Stableford shows gross points with handicap-adjusted net score.
             </div>
           )}
           <DataTable data={isTeam ? teamLb?.leaderboard : leaderboard?.leaderboard}/>
@@ -725,43 +726,45 @@ function App() {
     if (view === 'stableford' && sheetData) {
       return (
         <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-[#0F2C1D]/90 rounded-xl border border-[#D4AF37]/20 p-4 gap-3 sm:gap-0">
-            <h2 className="text-xl font-serif text-[#D4AF37]">{sheetData?.display_name}</h2>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-[#A9C5B4] hidden sm:inline">Mode:</span>
-              <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20 w-full sm:w-auto">
-                <button
-                  onClick={() => setLeaderboardMode('stableford')}
-                  className={`px-2 sm:px-3 py-1.5 text-xs rounded-md transition-all flex-1 sm:flex-none ${
-                    leaderboardMode === 'stableford'
-                      ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                      : 'text-[#A9C5B4] hover:text-white'
-                  }`}
-                >
-                  Stableford
-                </button>
-                <button
-                  onClick={() => setLeaderboardMode('stroke')}
-                  className={`px-2 sm:px-3 py-1.5 text-xs rounded-md transition-all flex-1 sm:flex-none ${
-                    leaderboardMode === 'stroke'
-                      ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                      : 'text-[#A9C5B4] hover:text-white'
-                  }`}
-                >
-                  Stroke Play
-                </button>
-              </div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
+            <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20 self-center sm:self-auto">
+              <button
+                onClick={() => setLeaderboardMode('stableford')}
+                className={`px-3 py-1.5 text-xs rounded-md transition-all w-24 ${
+                  leaderboardMode === 'stableford'
+                    ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                    : 'text-[#A9C5B4] hover:text-white'
+                }`}
+              >
+                Stableford
+              </button>
+              <button
+                onClick={() => setLeaderboardMode('stroke')}
+                className={`px-3 py-1.5 text-xs rounded-md transition-all w-24 ${
+                  leaderboardMode === 'stroke'
+                    ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                    : 'text-[#A9C5B4] hover:text-white'
+                }`}
+              >
+                Stroke
+              </button>
             </div>
           </div>
           {leaderboardMode === 'stroke' && (
             <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
-              <span className="text-[#D4AF37]">ℹ️</span> Stroke Play shows gross strokes with handicap-adjusted net score in parentheses (all rounds).
+              <span className="text-[#D4AF37]">ℹ️</span> Stroke Play shows gross strokes with handicap-adjusted net score.
+            </div>
+          )}
+          {leaderboardMode === 'stableford' && (
+            <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
+              <span className="text-[#D4AF37]">ℹ️</span> Stableford shows gross points with handicap-adjusted net score.
             </div>
           )}
           <ErrorBoundary>
             <GolfScorecard 
-              data={sheetData?.data} 
-              title={sheetData?.display_name} 
+              data={sheetData?.data}
+              title={null}
               currentUser={user?.name}
               jokerHole={sheetData?.joker_hole}
               beerHole={sheetData?.beer_hole}
@@ -775,42 +778,44 @@ function App() {
     if (view === 'teams' && sheetData) {
       return (
         <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-[#0F2C1D]/90 rounded-xl border border-[#D4AF37]/20 p-4 gap-3 sm:gap-0">
-            <h2 className="text-xl font-serif text-[#D4AF37]">{sheetData?.display_name}</h2>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-[#A9C5B4] hidden sm:inline">Mode:</span>
-              <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20 w-full sm:w-auto">
-                <button
-                  onClick={() => setLeaderboardMode('stableford')}
-                  className={`px-2 sm:px-3 py-1.5 text-xs rounded-md transition-all flex-1 sm:flex-none ${
-                    leaderboardMode === 'stableford'
-                      ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                      : 'text-[#A9C5B4] hover:text-white'
-                  }`}
-                >
-                  Stableford
-                </button>
-                <button
-                  onClick={() => setLeaderboardMode('stroke')}
-                  className={`px-2 sm:px-3 py-1.5 text-xs rounded-md transition-all flex-1 sm:flex-none ${
-                    leaderboardMode === 'stroke'
-                      ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                      : 'text-[#A9C5B4] hover:text-white'
-                  }`}
-                >
-                  Stroke Play
-                </button>
-              </div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
+            <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20 self-center sm:self-auto">
+              <button
+                onClick={() => setLeaderboardMode('stableford')}
+                className={`px-3 py-1.5 text-xs rounded-md transition-all w-24 ${
+                  leaderboardMode === 'stableford'
+                    ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                    : 'text-[#A9C5B4] hover:text-white'
+                }`}
+              >
+                Stableford
+              </button>
+              <button
+                onClick={() => setLeaderboardMode('stroke')}
+                className={`px-3 py-1.5 text-xs rounded-md transition-all w-24 ${
+                  leaderboardMode === 'stroke'
+                    ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                    : 'text-[#A9C5B4] hover:text-white'
+                }`}
+              >
+                Stroke
+              </button>
             </div>
           </div>
           {leaderboardMode === 'stroke' && (
             <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
-              <span className="text-[#D4AF37]">ℹ️</span> Stroke Play shows gross strokes with handicap-adjusted net score in parentheses (all rounds).
+              <span className="text-[#D4AF37]">ℹ️</span> Stroke Play shows gross strokes with handicap-adjusted net score.
+            </div>
+          )}
+          {leaderboardMode === 'stableford' && (
+            <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
+              <span className="text-[#D4AF37]">ℹ️</span> Stableford shows gross points with handicap-adjusted net score.
             </div>
           )}
           <TeamScorecard 
-            data={sheetData?.data} 
-            title={sheetData?.display_name} 
+            data={sheetData?.data}
+            title={null}
             jokerHole={sheetData?.joker_hole}
             beerHole={sheetData?.beer_hole}
             mode={leaderboardMode}
@@ -837,7 +842,7 @@ function App() {
                 <div className="h-12 w-12 sm:h-14 sm:w-14 shrink-0 overflow-hidden rounded-md border border-[#D4AF37]/25 bg-[#051A10] flex items-center justify-center">
                   <img src="/favicon.svg" alt="Pellies BC" className="w-[84px] h-[84px] sm:w-[96px] sm:h-[96px] object-contain"/>
                 </div>
-                <div><h1 className="text-2xl sm:text-3xl font-serif text-[#D4AF37] tracking-tight" data-testid="app-season-title">{currentSeason?.name || 'Pellies Golf League'}</h1><p className="text-xs text-[#A9C5B4] mt-0.5">Updated: {formatLastUpdated(lastUpdated)}</p></div>
+                <div><h1 className="text-2xl sm:text-3xl font-sans font-bold text-[#D4AF37] tracking-tight" data-testid="app-season-title">{currentSeason?.name || 'Pellies Golf League'}</h1><p className="text-xs text-[#A9C5B4] mt-0.5">Updated: {formatLastUpdated(lastUpdated)}</p></div>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={handleRefresh} disabled={refreshing} className="flex items-center gap-2 px-3 py-2 bg-[#D4AF37]/20 hover:bg-[#D4AF37]/30 text-[#D4AF37] border border-[#D4AF37]/40 rounded-lg transition-colors disabled:opacity-50">

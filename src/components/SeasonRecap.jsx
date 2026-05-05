@@ -362,7 +362,7 @@ export default function SeasonRecapModal({ season, onClose }) {
           <div className="flex items-center justify-between px-5 py-3 border-b border-[#D4AF37]/20">
             <div className="flex items-center gap-2">
               <Trophy size={18} className="text-[#D4AF37]" weight="duotone" />
-              <h2 className="text-base font-serif text-[#D4AF37]">Share Season Recap</h2>
+              <h2 className="text-base font-sans text-[#D4AF37]">Share Season Recap</h2>
             </div>
             <button onClick={onClose} className="text-[#A9C5B4] hover:text-white" data-testid="recap-close"><X size={18} /></button>
           </div>

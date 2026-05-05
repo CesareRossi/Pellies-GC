@@ -55,7 +55,7 @@ function DrinksWatch({ perRound }) {
       <div className="flex items-center gap-2 mb-3">
         <span className="text-2xl">🍺</span>
         <div>
-          <h3 className="text-sm font-serif text-rose-300">Drinks Watch</h3>
+          <h3 className="text-sm font-sans text-rose-300">Drinks Watch</h3>
           <p className="text-[11px] text-rose-300/70 uppercase tracking-wider">Beer hole winners — because drinks can't wait</p>
         </div>
       </div>
@@ -132,7 +132,7 @@ function RoundRow({ round, index, openDefault = false }) {
         <Flag size={18} className="text-[#D4AF37]" weight="duotone" />
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
-            <p className="text-base font-serif text-[#D4AF37]">Round {round.round_number}</p>
+            <p className="text-base font-sans text-[#D4AF37]">Round {round.round_number}</p>
             <p className="text-xs text-[#A9C5B4] truncate">{round.course}</p>
           </div>
         </div>
@@ -233,7 +233,7 @@ export default function Awards({ awards }) {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 mb-4">
             <Lock size={28} className="text-[#D4AF37]" weight="duotone" />
           </div>
-          <h2 className="text-2xl sm:text-3xl font-serif text-[#D4AF37] mb-2">Season Awards Locked</h2>
+          <h2 className="text-2xl sm:text-3xl font-sans text-[#D4AF37] mb-2">Season Awards Locked</h2>
           <p className="text-[#A9C5B4] text-sm max-w-md mx-auto mb-6 leading-relaxed">
             Full banter unlocks once every player has logged every round.
           </p>
@@ -264,7 +264,7 @@ export default function Awards({ awards }) {
       {/* Refined header */}
       <div className="text-center mb-8">
         <p className="text-[11px] text-[#D4AF37]/80 uppercase tracking-[0.25em] mb-1">Season Complete</p>
-        <h2 className="text-3xl sm:text-4xl font-serif text-[#D4AF37] mb-1">Awards</h2>
+        <h2 className="text-3xl sm:text-4xl font-sans text-[#D4AF37] mb-1">Awards</h2>
         <p className="text-xs text-[#A9C5B4]">{total} rounds · {awards.active_players} players</p>
       </div>
 

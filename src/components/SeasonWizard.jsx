@@ -276,7 +276,7 @@ export default function SeasonWizard({ onComplete }) {
           {step === 0 && (
             <div className="text-center py-8">
               <Golf size={48} weight="duotone" className="text-[#D4AF37] mx-auto mb-4" />
-              <h2 className="text-2xl font-serif text-[#D4AF37] mb-3">Season Setup Wizard</h2>
+              <h2 className="text-2xl font-sans text-[#D4AF37] mb-3">Season Setup Wizard</h2>
               <p className="text-[#A9C5B4] text-sm max-w-md mx-auto mb-6">
                 Set up your league: add players, courses (with hole par &amp; SI), rounds, and season-wide team pairings.
               </p>
@@ -537,7 +537,7 @@ export default function SeasonWizard({ onComplete }) {
           {step === 5 && (
             <div className="text-center py-8">
               <Check size={48} weight="duotone" className="text-emerald-400 mx-auto mb-4" />
-              <h2 className="text-2xl font-serif text-[#D4AF37] mb-3">Season Ready!</h2>
+              <h2 className="text-2xl font-sans text-[#D4AF37] mb-3">Season Ready!</h2>
               <p className="text-[#A9C5B4] text-sm mb-6">Your league is configured with:</p>
               <div className="grid grid-cols-2 gap-3 max-w-xs mx-auto mb-6">
                 <div className="text-center py-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10"><p className="text-xl font-bold text-white">{players.length}</p><p className="text-xs text-[#A9C5B4]">Players</p></div>

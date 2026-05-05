@@ -31,7 +31,7 @@ export default function ConfirmModal({ open, title, message, confirmLabel = 'Con
                 <WarningCircle size={20} weight="fill" />
               </div>
               <div className="flex-1">
-                <h3 className="text-base font-serif text-[#D4AF37] mb-1">{title}</h3>
+                <h3 className="text-base font-sans text-[#D4AF37] mb-1">{title}</h3>
                 <p className="text-sm text-[#A9C5B4] leading-relaxed">{message}</p>
               </div>
               <button onClick={onClose} className="text-[#A9C5B4] hover:text-white -mt-1"><X size={18} /></button>

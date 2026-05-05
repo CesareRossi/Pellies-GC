@@ -728,36 +728,32 @@ export async function getLeaderboardData(mode = 'stableford') {
       roundDetails[r.courses?.name || `Round ${r.round_number}`] = score ? score.display : (mode === 'stroke' ? '-' : 0);
     }
     // Return only fields needed for display (exclude internal sorting fields)
-    return { player: p.name, ...roundDetails, total };
+    return { player: p.name, ...roundDetails, total, _average: average, _hasScores: hasScores };
   });
 
-  if (mode === 'stroke') {
-    // Stroke play: prioritize players with scores, then by total (ascending)
-    // For individual stroke play, round scores are strings like "85 (78)" or "-"
-    leaderboard.sort((a, b) => {
-      const aRoundKeys = Object.keys(a).filter(k => k !== 'player' && k !== 'total');
-      const bRoundKeys = Object.keys(b).filter(k => k !== 'player' && k !== 'total');
-      // Check if player has actual round scores (strings that are not '-' and contain numbers)
-      const aHasScores = aRoundKeys.some(k => {
-        const val = a[k];
-        return val !== '-' && val !== '' && typeof val === 'string' && /\d/.test(val);
-      });
-      const bHasScores = bRoundKeys.some(k => {
-        const val = b[k];
-        return val !== '-' && val !== '' && typeof val === 'string' && /\d/.test(val);
-      });
-      // Players with scores come first
-      if (aHasScores && !bHasScores) return -1;
-      if (!aHasScores && bHasScores) return 1;
-      // Both have scores: sort by total (lower is better for stroke play)
-      if (aHasScores && bHasScores) return a.total - b.total;
-      // Neither has scores: maintain original order
-      return 0;
-    });
-  } else {
-    // Stableford: higher is better, sort descending
-    leaderboard.sort((a, b) => b.total - a.total);
-  }
+  // Sort by average per round (both modes)
+  // Stroke play: lower average is better
+  // Stableford: higher average is better
+  leaderboard.sort((a, b) => {
+    // Players with scores come first
+    if (a._hasScores && !b._hasScores) return -1;
+    if (!a._hasScores && b._hasScores) return 1;
+    // Both have scores: sort by average
+    if (a._hasScores && b._hasScores) {
+      if (mode === 'stroke') {
+        return a._average - b._average; // Lower is better for stroke play
+      } else {
+        return b._average - a._average; // Higher is better for Stableford
+      }
+    }
+    // Neither has scores: maintain original order
+    return 0;
+  });
+  // Remove internal sorting fields from final output
+  leaderboard.forEach(row => {
+    delete row._average;
+    delete row._hasScores;
+  });
   assignTiedRanks(leaderboard, 'total');
   return { leaderboard: withRankFirst(leaderboard), rounds };
 }

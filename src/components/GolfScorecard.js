@@ -105,9 +105,11 @@ const GolfScorecard = ({ data, title, currentUser = null, jokerHole = null, beer
 
   return (
     <div className="golf-scorecard">
-      <div className="text-center mb-8">
-        <h2 className="text-3xl font-serif text-[#D4AF37] mb-2">{title}</h2>
-      </div>
+      {title && (
+        <div className="text-center mb-8">
+          <h2 className="text-3xl font-sans font-bold text-[#D4AF37] mb-2">{title}</h2>
+        </div>
+      )}
 
       {/* Scorecard Grid with horizontal scrolling */}
       <div className="relative overflow-x-auto rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md shadow-2xl">

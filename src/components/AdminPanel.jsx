@@ -20,7 +20,7 @@ const Modal = ({ title, onClose, children, footer, wide = false }) => createPort
     >
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-[#D4AF37]/15 flex-shrink-0 rounded-t-xl">
-        <h2 className="text-base font-serif text-[#D4AF37]">{title}</h2>
+        <h2 className="text-base font-sans text-[#D4AF37]">{title}</h2>
         <button onClick={onClose} className="text-[#A9C5B4] hover:text-white"><X size={20} /></button>
       </div>
       {/* Body — grows to content, outer backdrop handles scrolling */}
@@ -797,7 +797,7 @@ const SeasonPanel = ({ onSeasonChanged }) => {
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
               <p className="text-[11px] uppercase tracking-[0.15em] text-[#D4AF37]/80 mb-1">Active</p>
-              <p className="text-white text-xl font-serif truncate" data-testid="current-season-name">{current?.name || '— no season —'}</p>
+              <p className="text-white text-xl font-sans truncate" data-testid="current-season-name">{current?.name || '— no season —'}</p>
               {current?.started_at && <p className="text-[#A9C5B4] text-xs mt-1">Started {new Date(current.started_at).toLocaleDateString()}</p>}
             </div>
             <button onClick={startRename} className="text-[#A9C5B4] hover:text-[#D4AF37] flex-shrink-0" data-testid="season-rename-btn"><PencilSimple size={16} /></button>
@@ -1013,7 +1013,7 @@ export default function AdminPanel({ onSeasonChanged, currentUserId }) {
   const [tab, setTab] = useState('players');
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} data-testid="admin-panel">
-      <div className="text-center mb-8"><h2 className="text-3xl font-serif text-[#D4AF37] mb-2">Admin Panel</h2><p className="text-[#A9C5B4] text-sm">Manage your golf league</p></div>
+      <div className="text-center mb-8"><h2 className="text-3xl font-sans text-[#D4AF37] mb-2">Admin Panel</h2><p className="text-[#A9C5B4] text-sm">Manage your golf league</p></div>
       <div className="flex flex-wrap gap-2 justify-center mb-8">
         {['players','courses','rounds','teams','users','season','danger'].map(t => <TabBtn key={t} active={tab===t} label={t==='danger' ? 'Danger Zone' : t==='season' ? 'Season' : t.charAt(0).toUpperCase()+t.slice(1)} onClick={()=>setTab(t)}/>)}
       </div>
