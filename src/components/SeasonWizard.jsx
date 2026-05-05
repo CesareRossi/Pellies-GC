@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight, ArrowLeft, Check, Plus, Trash, Flag, MapPin, UsersThree, Golf, PencilSimple } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
+import { formatHandicap } from '../lib/utils';
 import ConfirmModal from './ConfirmModal';
 
 const steps = ['Welcome', 'Players', 'Courses', 'Rounds', 'Teams', 'Complete'];
@@ -330,7 +331,7 @@ export default function SeasonWizard({ onComplete }) {
                           {!p.is_active && <span className="text-[10px] uppercase tracking-wider text-amber-400">(disabled)</span>}
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-[#A9C5B4] text-xs">HC: {p.handicap ?? '-'}</span>
+                          <span className="text-[#A9C5B4] text-xs">HC: {formatHandicap(p.handicap) ?? '-'}</span>
                           <button 
                             onClick={() => setEditingPlayer({ id: p.id, name: p.name, handicap: p.handicap })}
                             className="text-[#A9C5B4] hover:text-[#D4AF37]"

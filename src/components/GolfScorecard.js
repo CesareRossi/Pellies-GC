@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatHandicap } from '../lib/utils';
 
 const GolfScorecard = ({ data, title, currentUser = null, jokerHole = null, beerHole = null, mode = 'stableford', playerHandicaps = null }) => {
   if (!data || !data.length) {
@@ -216,7 +217,7 @@ const GolfScorecard = ({ data, title, currentUser = null, jokerHole = null, beer
                   )}
                 </div>
                 {playerHandicaps && playerHandicaps[player] !== undefined && (
-                  <span className="text-[#A9C5B4] font-normal text-[10px]">({playerHandicaps[player]})</span>
+                  <span className="text-[#A9C5B4] font-normal text-[10px]">({formatHandicap(playerHandicaps[player])})</span>
                 )}
               </div>
               {/* Front 9 holes */}

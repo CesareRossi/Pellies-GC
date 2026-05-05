@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PencilSimple, Trash, Plus, Check, X, UserCircle, ShieldCheck, Clock, ShieldSlash, Warning, Flag, Trophy, CaretDown } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
+import { formatHandicap } from '../lib/utils';
 import ConfirmModal from './ConfirmModal';
 import SeasonRecapModal from './SeasonRecap';
 
@@ -136,7 +137,7 @@ const PlayersPanel = () => {
               <p className="text-white text-sm font-semibold">{p.name}</p>
               {!p.is_active && <span className="text-[10px] uppercase tracking-wider text-amber-400">(disabled)</span>}
             </div>
-            <p className="text-[#A9C5B4] text-xs">Handicap: {p.handicap ?? 'Not set'}</p>
+            <p className="text-[#A9C5B4] text-xs">Handicap: {formatHandicap(p.handicap) ?? 'Not set'}</p>
           </div>
           <div className="flex gap-2">
             <button onClick={() => { setEditing(p.id); setForm({ name: p.name, handicap: p.handicap }); setError(''); }} className="text-[#A9C5B4] hover:text-[#D4AF37]" data-testid={`player-edit-${p.id}`}><PencilSimple size={16} /></button>
