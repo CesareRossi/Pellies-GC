@@ -307,13 +307,16 @@ const ScoreEntry = ({rounds, players, userId}) => {
   const [scores, setScores] = useState({});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [excludedPlayers, setExcludedPlayers] = useState(new Set());
 
   useEffect(() => { if(rounds.length>0&&!selectedRound) setSelectedRound(rounds[0].id); }, [rounds, selectedRound]);
 
   useEffect(() => {
     if(!selectedRound) return;
     setHoles([]); // Clear holes while loading
+    setExcludedPlayers(new Set()); // Clear exclusions while loading
     db.getHolesForRound(selectedRound).then(setHoles).catch(()=>setHoles([]));
+    db.getRoundExclusions(selectedRound).then(ids=>setExcludedPlayers(new Set(ids))).catch(()=>setExcludedPlayers(new Set()));
     setSelectedPlayer(null); setScores({});
   }, [selectedRound]);
 
@@ -358,7 +361,7 @@ const ScoreEntry = ({rounds, players, userId}) => {
         <div><label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Player</label>
           <select value={selectedPlayer||''} onChange={e=>setSelectedPlayer(e.target.value)} className="w-full px-4 py-3 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white focus:outline-none text-sm">
             <option value="">Choose player...</option>
-            {players.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+            {players.filter(p=>!excludedPlayers.has(p.id)).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
           </select></div>
       </div>
       {rd&&<div className="flex flex-wrap justify-center gap-4 mb-6 text-xs text-[#A9C5B4]">
