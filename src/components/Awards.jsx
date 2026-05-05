@@ -4,8 +4,8 @@ import { Lock, Flag, CaretDown } from '@phosphor-icons/react';
 
 const tileDefs = [
   { emoji: '🥄', key: 'wooden_spoon', label: 'Wooden Spoon', detail: (d) => d ? `${d.points} pts` : '—' },
-  { emoji: '🧊', key: 'freeze',       label: 'Freeze',       detail: (d) => d && d.drop > 0 ? `−${d.drop} pts F→B` : '—' },
-  { emoji: '🔥', key: 'heater',       label: 'Heater',       detail: (d) => d && d.gain > 0 ? `+${d.gain} pts B9` : '—' },
+  { emoji: '🧊', key: 'freeze',       label: 'Freeze',       detail: (d) => d ? `${d.drop > 0 ? '−' + d.drop : d.drop < 0 ? '+' + Math.abs(d.drop) : '0'} pts F→B` : '—' },
+  { emoji: '🔥', key: 'heater',       label: 'Heater',       detail: (d) => d ? `${d.gain > 0 ? '+' + d.gain : d.gain < 0 ? d.gain : '0'} pts B9` : '—' },
   { emoji: '🐢', key: 'slow_starter', label: 'Slow Start',   detail: (d) => d ? `${d.points} pts H1-3` : '—' },
   { emoji: '🎯', key: 'clutch_king',  label: 'Clutch King',  detail: (d) => d ? `${d.points} pts H16-18` : '—' },
 ];
@@ -15,6 +15,12 @@ function formatNames(names) {
   if (names.length === 1) return names[0];
   if (names.length === 2) return names.join(' & ');
   return names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1];
+}
+
+function formatNamesFromArray(array, key = 'player') {
+  if (!array || array.length === 0) return '—';
+  const names = array.map(item => item[key]).filter(Boolean);
+  return formatNames(names);
 }
 
 // Small helper — renders each tied player as its own chip so long lists
@@ -262,27 +268,50 @@ export default function Awards({ awards }) {
         <p className="text-xs text-[#A9C5B4]">{total} rounds · {awards.active_players} players</p>
       </div>
 
-      {/* Season headlines — 2 hero cards instead of 3 cluttered ones */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-10">
-        <div className="rounded-xl border border-amber-500/25 bg-gradient-to-br from-amber-500/10 to-transparent p-5">
+      {/* Season headlines — 4 hero cards with tie support */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
+        {/* Golden Round — Best single round */}
+        <div className="rounded-xl border border-yellow-500/25 bg-gradient-to-br from-yellow-500/10 to-transparent p-5">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-2xl">🥄</span>
-            <span className="text-[11px] uppercase tracking-[0.15em] text-amber-300 font-semibold">Wooden Spoon Leader</span>
+            <span className="text-2xl">👑</span>
+            <span className="text-[11px] uppercase tracking-[0.15em] text-yellow-300 font-semibold">Golden Round</span>
           </div>
-          <p className="text-white font-bold text-xl truncate">{season.wooden_spoon_leader?.player || '—'}</p>
+          <p className="text-white font-bold text-xl">{formatNamesFromArray(season.golden_round)}</p>
           <p className="text-[#A9C5B4] text-xs mt-0.5">
-            {season.wooden_spoon_leader?.count > 0 ? `${season.wooden_spoon_leader.count}× worst round this season` : 'Nobody stinkered yet'}
-            {season.longest_streak?.streak > 1 && ` · streak ${season.longest_streak.streak}×`}
+            {season.golden_round?.length > 0 ? `${season.golden_round[0].total} pts · ${season.golden_round[0].course}` : 'No rounds played yet'}
           </p>
         </div>
+        {/* Joker King — Most bonus points combined */}
         <div className="rounded-xl border border-purple-500/25 bg-gradient-to-br from-purple-500/10 to-transparent p-5">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-2xl">🎭</span>
             <span className="text-[11px] uppercase tracking-[0.15em] text-purple-300 font-semibold">Joker King</span>
           </div>
-          <p className="text-white font-bold text-xl truncate">{season.joker_king?.player || '—'}</p>
+          <p className="text-white font-bold text-xl">{formatNamesFromArray(season.joker_king)}</p>
           <p className="text-[#A9C5B4] text-xs mt-0.5">
-            {season.joker_king ? `+${season.joker_king.bonus} bonus pts · ${season.joker_king.course} H${season.joker_king.hole}` : 'No joker hole set yet'}
+            {season.joker_king?.length > 0 ? `+${season.joker_king[0].totalBonus} bonus pts across ${season.joker_king[0].rounds?.length || 0} joker hole${season.joker_king[0].rounds?.length !== 1 ? 's' : ''}` : 'No joker holes played yet'}
+          </p>
+        </div>
+        {/* Beer King — Most beers bought */}
+        <div className="rounded-xl border border-rose-500/25 bg-gradient-to-br from-rose-500/10 to-transparent p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-2xl">🍺</span>
+            <span className="text-[11px] uppercase tracking-[0.15em] text-rose-300 font-semibold">Beer King</span>
+          </div>
+          <p className="text-white font-bold text-xl">{formatNamesFromArray(season.beer_king)}</p>
+          <p className="text-[#A9C5B4] text-xs mt-0.5">
+            {season.beer_king?.length > 0 ? `${season.beer_king[0].count}× buying drinks · ${season.beer_king[0].count === 1 ? 'a true legend' : 'the most generous'}` : 'No beer holes yet'}
+          </p>
+        </div>
+        {/* Wooden Spoon — Lowest average across played rounds only */}
+        <div className="rounded-xl border border-amber-500/25 bg-gradient-to-br from-amber-500/10 to-transparent p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-2xl">🥄</span>
+            <span className="text-[11px] uppercase tracking-[0.15em] text-amber-300 font-semibold">Wooden Spoon</span>
+          </div>
+          <p className="text-white font-bold text-xl">{formatNamesFromArray(season.wooden_spoon_leader)}</p>
+          <p className="text-[#A9C5B4] text-xs mt-0.5">
+            {season.wooden_spoon_leader?.length > 0 ? `${Math.round(season.wooden_spoon_leader[0].average * 10) / 10} avg · ${season.wooden_spoon_leader[0].rounds} rounds` : 'No rounds completed'}
           </p>
         </div>
       </div>

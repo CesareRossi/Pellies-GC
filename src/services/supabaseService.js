@@ -1174,36 +1174,6 @@ export async function getAwards() {
   }
 
   // ===== SEASON SUMMARIES =====
-  // Wooden Spoon season tally (excluded players can't win the spoon for a round they sat out)
-  const spoonCounts = {};
-  const spoonHistory = [];
-  for (const r of rounds) {
-    const excludedSet = excludedByRound[r.id] || new Set();
-    let worst = null;
-    for (const p of players) {
-      if (excludedSet.has(p.id)) continue;
-      const d = perPR[p.id]?.[r.id];
-      if (!d) continue;
-      if (!worst || d.total < worst.total) worst = { playerId: p.id, total: d.total, roundId: r.id };
-    }
-    if (worst) {
-      spoonCounts[worst.playerId] = (spoonCounts[worst.playerId] || 0) + 1;
-      spoonHistory.push({ ...worst, name: nameById[worst.playerId], round_number: r.round_number, course: r.courses?.name || `R${r.round_number}` });
-    }
-  }
-  const spoonList = Object.entries(spoonCounts)
-    .map(([pid, count]) => ({ player: nameById[+pid] || 'Unknown', count }))
-    .sort((a, b) => b.count - a.count);
-  let longestStreak = { player: '', streak: 0 };
-  let currentStreak = { playerId: null, len: 0 };
-  for (const h of spoonHistory) {
-    if (h.playerId === currentStreak.playerId) currentStreak.len++;
-    else currentStreak = { playerId: h.playerId, len: 1 };
-    if (currentStreak.len > longestStreak.streak) {
-      longestStreak = { player: nameById[currentStreak.playerId] || '-', streak: currentStreak.len };
-    }
-  }
-
   // Season-wide beer-hole tally: how many times each player bought drinks (ties all count)
   const beerTally = {};
   const activePlayerIds = new Set(players.filter(p => p.is_active).map(p => p.id));
@@ -1222,8 +1192,9 @@ export async function getAwards() {
     .sort((a, b) => b.count - a.count);
 
   // ===== SEASON-WIDE JOKER HOLE =====
-  // Track best joker hole bonus across ALL rounds — "king of the joker"
-  const jokerBestBonus = {}; // playerId -> best base points earned on any joker hole
+  // Track total bonus points across ALL joker holes — "king of the joker"
+  // Bonus points = points earned on joker hole (doubled points minus base points = base points)
+  const jokerTotalBonus = {}; // playerId -> { totalBonus, rounds[] }
   for (const r of rounds) {
     if (!r.joker_hole) continue;
     const excludedSet = excludedByRound[r.id] || new Set();
@@ -1237,19 +1208,75 @@ export async function getAwards() {
       const ch = calcCourseHandicap(player.handicap, r.courses?.slope, r.courses?.rating, r.courses?.par);
       const hcMap = distributeHandicapStrokes(ch, holesForRound);
       const basePts = calcStablefordPoints(s.strokes, hole.par, hcMap[s.hole_number] || 0);
-      if (!jokerBestBonus[s.player_id] || basePts > jokerBestBonus[s.player_id].bonus) {
-        jokerBestBonus[s.player_id] = {
-          bonus: basePts,
-          round: r.round_number,
-          course: r.courses?.name || `R${r.round_number}`,
-          hole: r.joker_hole,
-        };
+      // Bonus is the base points (since joker doubles: total = base*2, so bonus = base)
+      const bonus = basePts;
+      if (!jokerTotalBonus[s.player_id]) {
+        jokerTotalBonus[s.player_id] = { totalBonus: 0, rounds: [] };
       }
+      jokerTotalBonus[s.player_id].totalBonus += bonus;
+      jokerTotalBonus[s.player_id].rounds.push({
+        round: r.round_number,
+        course: r.courses?.name || `R${r.round_number}`,
+        hole: r.joker_hole,
+        bonus: bonus
+      });
     }
   }
-  const jokerKing = Object.entries(jokerBestBonus)
-    .map(([pid, d]) => ({ player: nameById[+pid] || '?', ...d }))
-    .sort((a, b) => b.bonus - a.bonus)[0] || null;
+  // Sort by total bonus and handle ties
+  const jokerSorted = Object.entries(jokerTotalBonus)
+    .map(([pid, d]) => ({ playerId: +pid, player: nameById[+pid] || '?', totalBonus: d.totalBonus, rounds: d.rounds }))
+    .sort((a, b) => b.totalBonus - a.totalBonus);
+  const jokerKing = jokerSorted.length > 0 ? jokerSorted[0].totalBonus > 0 ? jokerSorted.filter(p => p.totalBonus === jokerSorted[0].totalBonus) : [] : [];
+
+  // ===== SEASON-WIDE BEST ROUND (Golden Round) =====
+  // Track best single round performance across all rounds
+  const bestRoundByPlayer = {}; // playerId -> best round total
+  for (const p of players) {
+    let best = null;
+    for (const r of rounds) {
+      const d = perPR[p.id]?.[r.id];
+      if (!d) continue;
+      if (!best || d.total > best.total) {
+        best = { total: d.total, round: r.round_number, course: r.courses?.name || `R${r.round_number}` };
+      }
+    }
+    if (best) {
+      bestRoundByPlayer[p.id] = best;
+    }
+  }
+  const bestRoundSorted = Object.entries(bestRoundByPlayer)
+    .map(([pid, d]) => ({ playerId: +pid, player: nameById[+pid] || '?', ...d }))
+    .sort((a, b) => b.total - a.total);
+  const goldenRound = bestRoundSorted.length > 0 ? bestRoundSorted.filter(p => p.total === bestRoundSorted[0].total) : [];
+
+  // ===== SEASON-WIDE WOODEN SPOON (Lowest Average) =====
+  // Calculate average across only rounds where player played (excluded rounds don't count)
+  const spoonAverages = {}; // playerId -> { total, count, average }
+  for (const p of players) {
+    let totalPoints = 0;
+    let roundsPlayed = 0;
+    for (const r of rounds) {
+      const excludedSet = excludedByRound[r.id] || new Set();
+      // Skip excluded rounds entirely - they don't count toward average
+      if (excludedSet.has(p.id)) continue;
+      const d = perPR[p.id]?.[r.id];
+      if (d) {
+        totalPoints += d.total;
+        roundsPlayed++;
+      }
+    }
+    if (roundsPlayed > 0) {
+      spoonAverages[p.id] = {
+        playerId: p.id,
+        player: p.name,
+        total: totalPoints,
+        rounds: roundsPlayed,
+        average: totalPoints / roundsPlayed
+      };
+    }
+  }
+  const spoonSorted = Object.values(spoonAverages).sort((a, b) => a.average - b.average);
+  const woodenSpoonWinner = spoonSorted.length > 0 ? spoonSorted.filter(p => p.average === spoonSorted[0].average) : [];
 
   // Season completion (honouring exclusions)
   const activePlayerCount = players.length;
@@ -1269,9 +1296,10 @@ export async function getAwards() {
     active_players: activePlayerCount,
     per_round: perRoundAwards,
     season: {
-      wooden_spoon_leader: spoonList[0] || { player: '-', count: 0 },
-      longest_streak: longestStreak,
+      wooden_spoon_leader: woodenSpoonWinner,
       joker_king: jokerKing,
+      beer_king: beerList.length > 0 ? beerList.filter(p => p.count === beerList[0].count && p.count > 0) : [],
+      golden_round: goldenRound,
     },
   };
 }
