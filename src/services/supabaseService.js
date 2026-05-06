@@ -1721,6 +1721,26 @@ export async function updateCurrentSeasonName(name) {
   if (error) throw error;
 }
 
+export async function setCurrentRound(roundId) {
+  const current = await getCurrentSeason();
+  if (!current) throw new Error('No active season.');
+  const { error } = await supabase.from('seasons').update({ current_round_id: roundId }).eq('id', current.id);
+  if (error) throw error;
+}
+
+export async function getCurrentRound() {
+  const current = await getCurrentSeason();
+  if (!current?.current_round_id) return null;
+  
+  const { data, error } = await supabase
+    .from('rounds')
+    .select('*, courses(*)')
+    .eq('id', current.current_round_id)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
 // Archive the current season and start a new one with `newName`.
 // Snapshot is computed live from the current state, then all rounds/scores/teams/exclusions
 // are wiped (players, courses and course_holes are preserved).

@@ -118,46 +118,50 @@ const GolfScorecard = ({ data, title, currentUser = null, jokerHole = null, beer
         {/* Header Row - PLAYER | HOLE NUMBERS 1-9 | OUT | HOLE NUMBERS 10-18 | IN | TOT */}
         <div className="relative bg-[#051A10] border-b border-[#D4AF37]/30">
           <div className="grid grid-cols-13">
-            <div className="sticky left-0 z-20 px-2 sm:px-3 py-2 sm:py-3 text-[10px] sm:text-xs font-sans text-white font-bold uppercase tracking-wider border-r border-[#D4AF37]/30 bg-[#051A10]">PLAYER</div>
+            <div className="sticky left-0 z-20 px-2 sm:px-3 py-2 sm:py-3 text-[10px] sm:text-xs font-sans text-white font-bold uppercase tracking-wider border-r border-[#D4AF37]/30 bg-[#051A10] flex items-center justify-center">PLAYER</div>
             {[1,2,3,4,5,6,7,8,9].map(num => {
               const isJokerHole = jokerHole && num === jokerHole;
               const isBeerHole = beerHole && num === beerHole;
-              const hasIndicator = isJokerHole || isBeerHole;
               
               return (
-                <div key={num} className="px-1 sm:px-2 py-2 sm:py-3 text-center text-xs sm:text-sm font-bold text-white border-r border-[#D4AF37]/30 relative">
-                  {num}
-                  {hasIndicator && (
-                    <div className={`absolute -top-1 -right-1 w-3 h-3 sm:w-4 sm:h-4 rounded-full border-2 ${
+                <div key={num} className="px-1 sm:px-2 py-2 sm:py-3 text-center text-xs sm:text-sm font-bold text-white border-r border-[#D4AF37]/30 flex items-center justify-center">
+                  {isJokerHole || isBeerHole ? (
+                    <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full border-2 flex items-center justify-center ${
                       isJokerHole 
-                        ? 'bg-purple-500 border-purple-300 shadow-purple-500/70 shadow-md' 
-                        : 'bg-amber-500 border-amber-300 shadow-amber-500/70 shadow-md'
-                    }`}></div>
+                        ? 'border-purple-500 text-purple-400' 
+                        : 'border-amber-500 text-amber-400'
+                    }`}>
+                      {num}
+                    </div>
+                  ) : (
+                    <span className="flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8">{num}</span>
                   )}
                 </div>
               );
             })}
-            <div className="px-1 sm:px-2 py-2 sm:py-3 text-center text-xs sm:text-sm font-bold text-white border-r border-[#D4AF37]/30">OUT</div>
+            <div className="px-1 sm:px-2 py-2 sm:py-3 text-center text-xs sm:text-sm font-bold text-white border-r border-[#D4AF37]/30 flex items-center justify-center">OUT</div>
             {[10,11,12,13,14,15,16,17,18].map(num => {
               const isJokerHole = jokerHole && num === jokerHole;
               const isBeerHole = beerHole && num === beerHole;
-              const hasIndicator = isJokerHole || isBeerHole;
               
               return (
-                <div key={num} className="px-1 sm:px-2 py-2 sm:py-3 text-center text-xs sm:text-sm font-bold text-white border-r border-[#D4AF37]/30 relative">
-                  {num}
-                  {hasIndicator && (
-                    <div className={`absolute -top-1 -right-1 w-3 h-3 sm:w-4 sm:h-4 rounded-full border-2 ${
+                <div key={num} className="px-1 sm:px-2 py-2 sm:py-3 text-center text-xs sm:text-sm font-bold text-white border-r border-[#D4AF37]/30 flex items-center justify-center">
+                  {isJokerHole || isBeerHole ? (
+                    <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full border-2 flex items-center justify-center ${
                       isJokerHole 
-                        ? 'bg-purple-500 border-purple-300 shadow-purple-500/70 shadow-md' 
-                        : 'bg-amber-500 border-amber-300 shadow-amber-500/70 shadow-md'
-                    }`}></div>
+                        ? 'border-purple-500 text-purple-400' 
+                        : 'border-amber-500 text-amber-400'
+                    }`}>
+                      {num}
+                    </div>
+                  ) : (
+                    <span className="flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8">{num}</span>
                   )}
                 </div>
               );
             })}
-            <div className="px-1 sm:px-2 py-2 sm:py-3 text-center text-xs sm:text-sm font-bold text-white border-r border-[#D4AF37]/30">IN</div>
-            <div className="px-1 sm:px-2 py-2 sm:py-3 text-center text-xs sm:text-sm font-bold text-white">TOT</div>
+            <div className="px-1 sm:px-2 py-2 sm:py-3 text-center text-xs sm:text-sm font-bold text-white border-r border-[#D4AF37]/30 flex items-center justify-center">IN</div>
+            <div className="px-1 sm:px-2 py-2 sm:py-3 text-center text-xs sm:text-sm font-bold text-white flex items-center justify-center">TOT</div>
           </div>
         </div>
 

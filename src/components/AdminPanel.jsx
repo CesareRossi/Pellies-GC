@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PencilSimple, Trash, Plus, Check, X, UserCircle, ShieldCheck, Clock, ShieldSlash, Warning, Flag, Trophy, CaretDown } from '@phosphor-icons/react';
+import { PencilSimple, Trash, Plus, Check, X, UserCircle, ShieldCheck, Clock, ShieldSlash, Warning, Flag, Trophy, CaretDown, Target } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
 import { formatHandicap } from '../lib/utils';
 import ConfirmModal from './ConfirmModal';
@@ -331,6 +331,8 @@ const RoundsPanel = () => {
   const [confirmClear, setConfirmClear] = useState(null); // round to clear scores
   const [actionMsg, setActionMsg] = useState('');
   const [allExclusions, setAllExclusions] = useState([]);
+  const [currentRoundId, setCurrentRoundId] = useState(null);
+  const [settingCurrent, setSettingCurrent] = useState(false);
 
   useEffect(() => { load(); }, []);
   const load = async () => {
@@ -338,6 +340,11 @@ const RoundsPanel = () => {
     setCourses(await db.getCourses());
     setPlayers(await db.getPlayers());
     try { setAllExclusions(await db.getAllRoundExclusions()); } catch { /* ignore */ }
+    // Load current round from season
+    try {
+      const currentRound = await db.getCurrentRound();
+      setCurrentRoundId(currentRound?.id || null);
+    } catch { /* ignore */ }
   };
 
   const openEdit = async (round) => {
@@ -433,19 +440,67 @@ const RoundsPanel = () => {
     <div>
       <div className="flex items-center gap-3 mb-5">
         <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider flex-1">Rounds ({rounds.length})</h3>
+        {currentRoundId && (
+          <button 
+            onClick={async () => {
+              setSettingCurrent(true);
+              try {
+                await db.setCurrentRound(null);
+                setCurrentRoundId(null);
+                setActionMsg('Current round cleared');
+                setTimeout(() => setActionMsg(''), 4000);
+              } catch (e) {
+                setActionMsg('Error: ' + e.message);
+              } finally {
+                setSettingCurrent(false);
+              }
+            }}
+            disabled={settingCurrent}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs text-[#A9C5B4] border border-[#A9C5B4]/30 rounded-lg hover:text-white hover:border-white"
+          >
+            <Target size={14} /> Clear Live
+          </button>
+        )}
         <button onClick={openNew} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30 rounded-lg hover:bg-[#D4AF37]/30"><Plus size={14} /> Add</button>
       </div>
       {actionMsg && <div className={`mb-4 py-2 px-3 rounded-lg text-xs ${actionMsg.includes('Error') ? 'bg-red-900/30 text-red-400 border border-red-500/30' : 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/30'}`} data-testid="rounds-action-msg">{actionMsg}</div>}
       <div className="space-y-2">{rounds.map(r => {
         const exCount = allExclusions.filter(e => e.round_id === r.id).length;
         return (
-        <div key={r.id} className="flex items-center justify-between py-2.5 px-4 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10">
-          <div className="min-w-0 flex-1"><p className="text-white text-sm font-semibold">Round {r.round_number}</p><p className="text-[#A9C5B4] text-xs truncate">{r.courses ? r.courses.name : 'No course'} {r.is_setup ? '' : '(not set up)'}
-            {r.beer_hole && <span className="ml-2 text-rose-300">🍺 H{r.beer_hole}</span>}
-            {r.joker_hole && <span className="ml-2 text-purple-300">🎭 H{r.joker_hole}</span>}
-            {exCount > 0 && <span className="ml-2 text-amber-300">✕ {exCount} out</span>}
-          </p></div>
+        <div key={r.id} className={`flex items-center justify-between py-2.5 px-4 rounded-lg border ${currentRoundId === r.id ? 'bg-[#D4AF37]/20 border-[#D4AF37]/50' : 'bg-[#051A10]/60 border-[#D4AF37]/10'}`}>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="text-white text-sm font-semibold">Round {r.round_number}</p>
+              {currentRoundId === r.id && <span className="px-2 py-0.5 text-[10px] bg-[#D4AF37] text-[#051A10] rounded-full font-bold">LIVE</span>}
+            </div>
+            <p className="text-[#A9C5B4] text-xs truncate">{r.courses ? r.courses.name : 'No course'} {r.is_setup ? '' : '(not set up)'}
+              {r.beer_hole && <span className="ml-2 text-rose-300">🍺 H{r.beer_hole}</span>}
+              {r.joker_hole && <span className="ml-2 text-purple-300">🎭 H{r.joker_hole}</span>}
+              {exCount > 0 && <span className="ml-2 text-amber-300">✕ {exCount} out</span>}
+            </p>
+          </div>
           <div className="flex gap-2 items-center">
+            <button 
+              onClick={async () => {
+                setSettingCurrent(true);
+                try {
+                  await db.setCurrentRound(r.id);
+                  setCurrentRoundId(r.id);
+                  setActionMsg(`Round ${r.round_number} set as current for Live Leaderboard`);
+                  setTimeout(() => setActionMsg(''), 4000);
+                } catch (e) {
+                  setActionMsg('Error: ' + e.message);
+                } finally {
+                  setSettingCurrent(false);
+                }
+              }} 
+              disabled={settingCurrent || currentRoundId === r.id}
+              title={currentRoundId === r.id ? 'Current live round' : 'Set as current for Live Leaderboard'}
+              className={`${currentRoundId === r.id ? 'text-[#D4AF37]' : 'text-[#A9C5B4] hover:text-[#D4AF37]'} disabled:opacity-50`}
+              data-testid={`round-set-current-${r.id}`}
+            >
+              <Target size={16} weight={currentRoundId === r.id ? "fill" : "regular"} />
+            </button>
             <button onClick={() => openEdit(r)} className="text-[#A9C5B4] hover:text-[#D4AF37]" data-testid={`round-edit-${r.id}`}><PencilSimple size={16} /></button>
             <button onClick={() => setConfirmClear(r)} title="Clear scores for this round" className="text-[#A9C5B4] hover:text-amber-400" data-testid={`round-clear-${r.id}`}><Warning size={16} /></button>
             <button onClick={() => setConfirmDel(r)} title="Delete this round" className="text-[#A9C5B4] hover:text-red-400" data-testid={`round-delete-${r.id}`}><Trash size={16} /></button>
@@ -764,7 +819,14 @@ const SeasonPanel = ({ onSeasonChanged }) => {
     finally { setArchiving(false); }
   };
 
-  if (loading) return <p className="text-xs text-[#A9C5B4]/60 py-4 text-center">Loading season…</p>;
+  if (loading) {
+    return (
+      <div className="text-center py-8">
+        <div className="w-10 h-10 border-2 border-[#D4AF37]/30 border-t-[#D4AF37] rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-[#A9C5B4] text-sm">Loading season...</p>
+      </div>
+    );
+  }
 
   if (!tableExists) {
     return (

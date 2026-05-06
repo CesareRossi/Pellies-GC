@@ -40,6 +40,7 @@ import Awards from './components/Awards';
 import SeasonRecapModal from './components/SeasonRecap';
 import GolfScorecard from './components/GolfScorecard';
 import TeamScorecard from './components/TeamScorecard';
+import LiveLeaderboard from './components/LiveLeaderboard';
 
 const REFRESH_INTERVAL = 5 * 60 * 1000;
 
@@ -469,8 +470,13 @@ function App() {
   const [playerStats, setPlayerStats] = useState(null);
   const [awards, setAwards] = useState(null);
   const [sheetData, setSheetData] = useState(null);
+  const [sheetDataMode, setSheetDataMode] = useState(null); // Track which mode sheetData is for
   const [scorecardLoading, setScorecardLoading] = useState(false);
-  const [leaderboardMode, setLeaderboardMode] = useState('stableford'); // 'stableford' | 'stroke'
+  const [leaderboardMode, setLeaderboardMode] = useState(() => {
+    // Load from localStorage or default to 'stableford'
+    const saved = localStorage.getItem('leaderboardMode');
+    return saved === 'stroke' || saved === 'stableford' ? saved : 'stableford';
+  }); // 'stableford' | 'stroke'
   const [rounds, setRounds] = useState([]);
   const [players, setPlayers] = useState([]);
   const [currentSeason, setCurrentSeason] = useState(null);
@@ -534,10 +540,12 @@ function App() {
       else if (v === 'stableford' && param) { 
         const data = await db.getStablefordRoundData(param, leaderboardMode);
         setSheetData(data); 
+        setSheetDataMode(leaderboardMode);
       }
       else if (v === 'teams' && param) { 
         const data = await db.getTeamRoundData(param, leaderboardMode);
         setSheetData(data); 
+        setSheetDataMode(leaderboardMode);
       }
       setLastUpdated(new Date().toISOString());
     } catch(err) { 
@@ -549,12 +557,18 @@ function App() {
     }
   }, [leaderboardMode]);
 
+  // Persist leaderboardMode to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('leaderboardMode', leaderboardMode);
+  }, [leaderboardMode]);
+
   useEffect(() => { loadView(view, viewParam); }, [view, viewParam, loadView, leaderboardMode]);
 
   const navigate = (v, param) => { 
     // Clear sheetData when navigating to scorecards to prevent showing old data
     if (v === 'stableford' || v === 'teams') {
       setSheetData(null);
+      setSheetDataMode(null);
     }
     setView(v); 
     setViewParam(param !== undefined ? param : (v==='stableford'||v==='teams'?rounds[0]?.id:null)); 
@@ -657,8 +671,11 @@ function App() {
   const renderContent = () => {
     if (loading) {
       return (
-        <motion.div key="loading" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="flex items-center justify-center py-20">
-          <div className="text-[#D4AF37] text-lg">Loading...</div>
+        <motion.div key="loading" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="min-h-[60vh] flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-12 h-12 border-2 border-[#D4AF37]/30 border-t-[#D4AF37] rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-[#A9C5B4] text-sm">Loading...</p>
+          </div>
         </motion.div>
       );
     }
@@ -679,88 +696,27 @@ function App() {
         </motion.div>
       );
     }
+    if (view === 'live') {
+      return (
+        <motion.div key="live" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
+          <LiveLeaderboard currentRound={viewParam} onRefresh={handleRefresh} mode={leaderboardMode} setMode={setLeaderboardMode} />
+        </motion.div>
+      );
+    }
     if ((view === 'league_lb' || view === 'team_lb') && (leaderboard || teamLb)) {
       const isTeam = view === 'team_lb';
       const title = isTeam ? 'Team Leaderboard' : 'League Leaderboard';
       return (
         <motion.div key={view} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{title}</h2>
-            <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20 self-center sm:self-auto">
-              <button
-                onClick={() => setLeaderboardMode('stableford')}
-                className={`px-3 py-1.5 text-xs rounded-md transition-all w-24 ${
-                  leaderboardMode === 'stableford'
-                    ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                    : 'text-[#A9C5B4] hover:text-white'
-                }`}
-              >
-                Stableford
-              </button>
-              <button
-                onClick={() => setLeaderboardMode('stroke')}
-                className={`px-3 py-1.5 text-xs rounded-md transition-all w-24 ${
-                  leaderboardMode === 'stroke'
-                    ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                    : 'text-[#A9C5B4] hover:text-white'
-                }`}
-              >
-                Stroke
-              </button>
-            </div>
-          </div>
-          {leaderboardMode === 'stroke' && (
-            <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
-              <span className="text-[#D4AF37]">ℹ️</span> Stroke Play shows gross strokes with handicap-adjusted net score.
-            </div>
-          )}
-          {leaderboardMode === 'stableford' && (
-            <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
-              <span className="text-[#D4AF37]">ℹ️</span> Stableford shows gross points with handicap-adjusted net score.
-            </div>
-          )}
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{title}</h2>
           <DataTable data={isTeam ? teamLb?.leaderboard : leaderboard?.leaderboard}/>
         </motion.div>
       );
     }
-    if (view === 'stableford' && sheetData) {
+    if (view === 'stableford' && sheetData && sheetDataMode === leaderboardMode) {
       return (
-        <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
-            <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20 self-center sm:self-auto">
-              <button
-                onClick={() => setLeaderboardMode('stableford')}
-                className={`px-3 py-1.5 text-xs rounded-md transition-all w-24 ${
-                  leaderboardMode === 'stableford'
-                    ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                    : 'text-[#A9C5B4] hover:text-white'
-                }`}
-              >
-                Stableford
-              </button>
-              <button
-                onClick={() => setLeaderboardMode('stroke')}
-                className={`px-3 py-1.5 text-xs rounded-md transition-all w-24 ${
-                  leaderboardMode === 'stroke'
-                    ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                    : 'text-[#A9C5B4] hover:text-white'
-                }`}
-              >
-                Stroke
-              </button>
-            </div>
-          </div>
-          {leaderboardMode === 'stroke' && (
-            <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
-              <span className="text-[#D4AF37]">ℹ️</span> Stroke Play shows gross strokes with handicap-adjusted net score.
-            </div>
-          )}
-          {leaderboardMode === 'stableford' && (
-            <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
-              <span className="text-[#D4AF37]">ℹ️</span> Stableford shows gross points with handicap-adjusted net score.
-            </div>
-          )}
+        <motion.div key={`${view}-${viewParam}-${leaderboardMode}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
           <ErrorBoundary>
             <GolfScorecard 
               data={sheetData?.data}
@@ -775,44 +731,10 @@ function App() {
         </motion.div>
       );
     }
-    if (view === 'teams' && sheetData) {
+    if (view === 'teams' && sheetData && sheetDataMode === leaderboardMode) {
       return (
-        <motion.div key={`${view}-${viewParam}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
-            <div className="flex bg-[#051A10] rounded-lg p-1 border border-[#D4AF37]/20 self-center sm:self-auto">
-              <button
-                onClick={() => setLeaderboardMode('stableford')}
-                className={`px-3 py-1.5 text-xs rounded-md transition-all w-24 ${
-                  leaderboardMode === 'stableford'
-                    ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                    : 'text-[#A9C5B4] hover:text-white'
-                }`}
-              >
-                Stableford
-              </button>
-              <button
-                onClick={() => setLeaderboardMode('stroke')}
-                className={`px-3 py-1.5 text-xs rounded-md transition-all w-24 ${
-                  leaderboardMode === 'stroke'
-                    ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                    : 'text-[#A9C5B4] hover:text-white'
-                }`}
-              >
-                Stroke
-              </button>
-            </div>
-          </div>
-          {leaderboardMode === 'stroke' && (
-            <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
-              <span className="text-[#D4AF37]">ℹ️</span> Stroke Play shows gross strokes with handicap-adjusted net score.
-            </div>
-          )}
-          {leaderboardMode === 'stableford' && (
-            <div className="text-xs text-[#A9C5B4] bg-[#0A2518]/50 rounded-lg p-3 border border-[#D4AF37]/10">
-              <span className="text-[#D4AF37]">ℹ️</span> Stableford shows gross points with handicap-adjusted net score.
-            </div>
-          )}
+        <motion.div key={`${view}-${viewParam}-${leaderboardMode}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
           <TeamScorecard 
             data={sheetData?.data}
             title={null}
@@ -868,20 +790,73 @@ function App() {
               <div className="hidden lg:flex rounded-xl border border-[#D4AF37]/20 bg-[#0A2518]/75 backdrop-blur-xl px-2 py-2 items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
                   <button onClick={()=>navigate('overview')} className={primaryNavBtnClass(view==='overview')}><Gauge size={17} weight="duotone"/><span>Overview</span></button>
+                  <button onClick={()=>navigate('live')} className={primaryNavBtnClass(view==='live')}><Target size={17} weight="duotone"/><span>Live</span></button>
                   <NavDropdown label="Leaderboards" icon={<Trophy size={17} weight="duotone"/>} items={[{id:'league_lb',label:'League Leaderboard'},{id:'team_lb',label:'Team Leaderboard'}]} activeId={view==='league_lb'||view==='team_lb'?view:null} onSelect={id=>navigate(id)} testId="nav-lb"/>
                   {stabItems.length>0&&<NavDropdown label="Individual Rounds" icon={<ChartLine size={17} weight="duotone"/>} items={stabItems} activeId={view==='stableford'?viewParam:null} onSelect={id=>navigate('stableford',id)} testId="nav-stab"/>}
                   {teamItems.length>0&&<NavDropdown label="Teams Round" icon={<UsersThree size={17} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-teams"/>}
                 </div>
                 <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-[#D4AF37]/20">
+                  {/* Mode Toggle - Desktop */}
+                  <div className="flex bg-[#051A10] rounded-lg p-0.5 border border-[#D4AF37]/20">
+                    <button
+                      onClick={() => setLeaderboardMode('stableford')}
+                      className={`px-2 py-1 text-xs rounded-md transition-all ${
+                        leaderboardMode === 'stableford'
+                          ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                          : 'text-[#A9C5B4] hover:text-white'
+                      }`}
+                      title="Stableford scoring"
+                    >
+                      <span className="hidden xl:inline">Stableford</span>
+                      <span className="xl:hidden">SF</span>
+                    </button>
+                    <button
+                      onClick={() => setLeaderboardMode('stroke')}
+                      className={`px-2 py-1 text-xs rounded-md transition-all ${
+                        leaderboardMode === 'stroke'
+                          ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                          : 'text-[#A9C5B4] hover:text-white'
+                      }`}
+                      title="Stroke play scoring"
+                    >
+                      <span className="hidden xl:inline">Stroke</span>
+                      <span className="xl:hidden">ST</span>
+                    </button>
+                  </div>
                   {quickMenuItems.length>0&&<NavDropdown label="Manage" icon={<Gear size={15} weight="duotone"/>} items={quickMenuItems} activeId={quickMenuActiveViews.has(view)?view:null} onSelect={id=>navigate(id)} testId="nav-menu"/>}
                 </div>
               </div>
               <div className="lg:hidden rounded-xl border border-[#D4AF37]/20 bg-[#0A2518]/75 backdrop-blur-xl px-2 py-2">
                 <div className="grid grid-cols-2 gap-2">
-                  <NavDropdown label="Play" icon={<Gauge size={16} weight="duotone"/>} items={mobilePrimaryItems} activeId={['overview','league_lb','team_lb'].includes(view)?view:null} onSelect={id=>navigate(id)} testId="nav-mobile-primary"/>
+                  <NavDropdown label="Play" icon={<Gauge size={16} weight="duotone"/>} items={[{id:'overview',label:'Overview'},{id:'live',label:'Live Leaderboard'},{id:'league_lb',label:'League Leaderboard'},{id:'team_lb',label:'Team Leaderboard'}]} activeId={['overview','live','league_lb','team_lb'].includes(view)?view:null} onSelect={id=>navigate(id)} testId="nav-mobile-primary"/>
                   {quickMenuItems.length>0&&<NavDropdown label="Manage" icon={<Gear size={16} weight="duotone"/>} items={quickMenuItems} activeId={quickMenuActiveViews.has(view)?view:null} onSelect={id=>navigate(id)} testId="nav-mobile-menu"/>}
                   {stabItems.length>0&&<NavDropdown label="Individual" icon={<ChartLine size={16} weight="duotone"/>} items={stabItems} activeId={view==='stableford'?viewParam:null} onSelect={id=>navigate('stableford',id)} testId="nav-mobile-stab"/>}
                   {teamItems.length>0&&<NavDropdown label="Teams" icon={<UsersThree size={16} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-mobile-teams"/>}
+                </div>
+                {/* Mode Toggle - Mobile */}
+                <div className="mt-2 pt-2 border-t border-[#D4AF37]/20 flex justify-center">
+                  <div className="flex bg-[#051A10] rounded-lg p-0.5 border border-[#D4AF37]/20">
+                    <button
+                      onClick={() => setLeaderboardMode('stableford')}
+                      className={`px-4 py-1.5 text-xs rounded-md transition-all ${
+                        leaderboardMode === 'stableford'
+                          ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                          : 'text-[#A9C5B4] hover:text-white'
+                      }`}
+                    >
+                      Stableford
+                    </button>
+                    <button
+                      onClick={() => setLeaderboardMode('stroke')}
+                      className={`px-4 py-1.5 text-xs rounded-md transition-all ${
+                        leaderboardMode === 'stroke'
+                          ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                          : 'text-[#A9C5B4] hover:text-white'
+                      }`}
+                    >
+                      Stroke
+                    </button>
+                  </div>
                 </div>
               </div>
             </nav>
