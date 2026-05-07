@@ -736,60 +736,164 @@ const TeamsPanel = () => {
 const UsersPanel = ({ currentUserId, allPlayers }) => {
   const [users, setUsers] = useState([]);
   const [confirmRemove, setConfirmRemove] = useState(null);
-  useEffect(() => { load(); }, []);
-  const load = async () => { setUsers(await db.getAllUsers()); };
-  const updateRole = async (userId, role) => { await db.updateUserRole(userId, role); await load(); };
+
+  useEffect(() => { 
+    load(); 
+  }, []);
+
+  const load = async () => { 
+    setUsers(await db.getAllUsers()); 
+  };
+
+  const updateRole = async (userId, role) => { 
+    await db.updateUserRole(userId, role); 
+    await load(); 
+  };
+
   const updatePlayerLink = async (userId, playerId) => { 
     await db.updateUserPlayerLink(userId, playerId ? parseInt(playerId) : null); 
     await load(); 
   };
+
   const doRemove = async () => {
     if (!confirmRemove) return;
-    try { await db.removeUser(confirmRemove.id); await load(); }
-    catch (e) { alert('Error: ' + e.message); }
+
+    try { 
+      await db.removeUser(confirmRemove.id); 
+      await load(); 
+    } catch (e) { 
+      alert('Error: ' + e.message); 
+    }
   };
-  const ri = (role) => role === 'admin' ? <ShieldCheck size={16} className="text-[#D4AF37]" /> : role === 'approved' ? <Check size={16} className="text-emerald-400" /> : role === 'pending' ? <Clock size={16} className="text-amber-400" /> : <ShieldSlash size={16} className="text-red-400" />;
-  const rb = (role) => role === 'admin' ? 'bg-[#D4AF37]/10 text-[#D4AF37]' : role === 'approved' ? 'bg-emerald-900/30 text-emerald-400' : role === 'pending' ? 'bg-amber-900/30 text-amber-400' : 'bg-red-900/30 text-red-400';
+
+  const ri = (role) =>
+    role === 'admin' ? (
+      <ShieldCheck size={14} className="text-[#D4AF37]" />
+    ) : role === 'approved' ? (
+      <Check size={14} className="text-emerald-400" />
+    ) : role === 'pending' ? (
+      <Clock size={14} className="text-amber-400" />
+    ) : (
+      <ShieldSlash size={14} className="text-red-400" />
+    );
+
+  const rb = (role) =>
+    role === 'admin'
+      ? 'bg-[#D4AF37]/10 text-[#D4AF37]'
+      : role === 'approved'
+      ? 'bg-emerald-900/30 text-emerald-400'
+      : role === 'pending'
+      ? 'bg-amber-900/30 text-amber-400'
+      : 'bg-red-900/30 text-red-400';
+
   return (
     <div>
-      <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider mb-2">Users ({users.length})</h3>
-      <p className="text-xs text-[#A9C5B4]/60 mb-5 italic">Note: newly registered users appear here after their first login. If a user doesn't show up, ask them to log in once.</p>
-      <div className="space-y-2">{users.map(u => (
-        <div key={u.id} className="flex items-center gap-3 py-2.5 px-4 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10" data-testid={`user-row-${u.id}`}>
-          <UserCircle size={28} className="text-[#A9C5B4] flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-white text-sm font-semibold truncate">{u.display_name || u.email?.split('@')[0]}</p>
-            <p className="text-[#A9C5B4] text-xs break-all">{u.email}</p>
+      <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider mb-2">
+        Users ({users.length})
+      </h3>
+
+      <p className="text-xs text-[#A9C5B4]/60 mb-5 italic">
+        Note: newly registered users appear here after their first login.
+        If a user doesn't show up, ask them to log in once.
+      </p>
+
+      <div className="space-y-3">
+        {users.map((u) => (
+          <div
+            key={u.id}
+            className="rounded-xl bg-[#051A10]/60 border border-[#D4AF37]/10 p-3"
+            data-testid={`user-row-${u.id}`}
+          >
+            {/* TOP SECTION */}
+            <div className="flex items-center gap-3">
+              <UserCircle
+                size={34}
+                className="text-[#A9C5B4] flex-shrink-0"
+              />
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <p className="text-white text-sm font-semibold truncate">
+                    {u.display_name || u.email?.split('@')[0]}
+                  </p>
+
+                  <span
+                    className={`
+                      inline-flex items-center justify-center
+                      flex-shrink-0
+                      h-6 min-w-6 px-2
+                      rounded-full text-[10px] font-semibold
+                      ${rb(u.role)}
+                    `}
+                    title={u.role}
+                  >
+                    <span className="flex items-center gap-1">
+                      {ri(u.role)}
+
+                      {/* Only show text on md+ */}
+                      <span className="hidden md:inline capitalize">
+                        {u.role}
+                      </span>
+                    </span>
+                  </span>
+                </div>
+
+                <p className="text-[#A9C5B4] text-xs truncate mt-0.5">
+                  {u.email}
+                </p>
+              </div>
+
+              {u.id !== currentUserId && (
+                <button
+                  onClick={() => setConfirmRemove(u)}
+                  title="Remove user"
+                  className="text-[#A9C5B4] hover:text-red-400 flex-shrink-0 p-1"
+                  data-testid={`user-remove-${u.id}`}
+                >
+                  <Trash size={16} />
+                </button>
+              )}
+            </div>
+
+            {/* CONTROLS */}
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <select
+                value={u.role}
+                onChange={(e) => updateRole(u.id, e.target.value)}
+                className="w-full bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs rounded-lg px-3 py-2 focus:outline-none"
+                data-testid={`user-role-${u.id}`}
+              >
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="admin">Admin</option>
+                <option value="rejected">Disabled</option>
+              </select>
+
+              <select
+                value={u.player_id || ''}
+                onChange={(e) => updatePlayerLink(u.id, e.target.value)}
+                className="w-full bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs rounded-lg px-3 py-2 focus:outline-none"
+                title="Link to player"
+              >
+                <option value="">Not linked</option>
+
+                {allPlayers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${rb(u.role)}`}>{ri(u.role)} {u.role}</span>
-            <select value={u.role} onChange={e => updateRole(u.id, e.target.value)} className="bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs rounded px-2 py-1 focus:outline-none min-w-[100px]" data-testid={`user-role-${u.id}`}>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="admin">Admin</option>
-              <option value="rejected">Disabled</option>
-            </select>
-            <select 
-              value={u.player_id || ''} 
-              onChange={e => updatePlayerLink(u.id, e.target.value)} 
-              className="bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs rounded px-2 py-1 focus:outline-none min-w-[80px]"
-              title="Link to player"
-            >
-              <option value="">Not linked</option>
-              {allPlayers.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-            {u.id !== currentUserId && (
-              <button onClick={() => setConfirmRemove(u)} title="Remove user" className="text-[#A9C5B4] hover:text-red-400 flex-shrink-0" data-testid={`user-remove-${u.id}`}><Trash size={16} /></button>
-            )}
-          </div>
-        </div>
-      ))}</div>
+        ))}
+      </div>
+
       <ConfirmModal
         open={!!confirmRemove}
         title="Remove this user?"
-        message={`This will mark ${confirmRemove?.display_name || confirmRemove?.email} as removed and revoke all access. You can reinstate them later by changing their role.`}
+        message={`This will mark ${
+          confirmRemove?.display_name || confirmRemove?.email
+        } as removed and revoke all access. You can reinstate them later by changing their role.`}
         confirmLabel="Remove user"
         onConfirm={doRemove}
         onClose={() => setConfirmRemove(null)}
