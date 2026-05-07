@@ -154,6 +154,9 @@ const Overview = ({data, onNav, archivedSeasons = [], onShareRecap}) => {
               const joker = Array.isArray(s.summary_json?.awards?.season?.joker_king)
                 ? s.summary_json.awards.season.joker_king[0]?.player
                 : s.summary_json?.awards?.season?.joker_king?.player;
+              const beerKing = Array.isArray(s.summary_json?.awards?.season?.beer_king)
+                ? s.summary_json.awards.season.beer_king[0]?.player
+                : s.summary_json?.awards?.season?.beer_king?.player;
               const endYear = s.ended_at ? new Date(s.ended_at).getFullYear() : '';
               return (
                 <motion.div
@@ -181,7 +184,7 @@ const Overview = ({data, onNav, archivedSeasons = [], onShareRecap}) => {
                     )}
                     {spoon && (
                       <div className="flex items-center justify-between">
-                        <span className="text-[#A9C5B4]/80">🥄 Spoon</span>
+                        <span className="text-[#A9C5B4]/80">🥄 Wooden Spoon </span>
                         <span className="text-white/80 truncate max-w-[60%]">{spoon}</span>
                       </div>
                     )}
@@ -189,6 +192,12 @@ const Overview = ({data, onNav, archivedSeasons = [], onShareRecap}) => {
                       <div className="flex items-center justify-between">
                         <span className="text-[#A9C5B4]/80">🎭 Joker King</span>
                         <span className="text-white/80 truncate max-w-[60%]">{joker}</span>
+                      </div>
+                    )}
+                    {beerKing && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#A9C5B4]/80">🍺 Beer King</span>
+                        <span className="text-white/80 truncate max-w-[60%]">{beerKing}</span>
                       </div>
                     )}
                   </div>
