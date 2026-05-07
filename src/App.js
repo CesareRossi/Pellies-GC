@@ -148,8 +148,12 @@ const Overview = ({data, onNav, archivedSeasons = [], onShareRecap}) => {
             {archivedSeasons.slice(0, 6).map((s) => {
               const champ = s.summary_json?.champion;
               const team = s.summary_json?.champion_team;
-              const spoon = s.summary_json?.awards?.season?.wooden_spoon_leader?.player;
-              const joker = s.summary_json?.awards?.season?.joker_king?.player;
+              const spoon = Array.isArray(s.summary_json?.awards?.season?.wooden_spoon_leader)
+                ? s.summary_json.awards.season.wooden_spoon_leader[0]?.player
+                : s.summary_json?.awards?.season?.wooden_spoon_leader?.player;
+              const joker = Array.isArray(s.summary_json?.awards?.season?.joker_king)
+                ? s.summary_json.awards.season.joker_king[0]?.player
+                : s.summary_json?.awards?.season?.joker_king?.player;
               const endYear = s.ended_at ? new Date(s.ended_at).getFullYear() : '';
               return (
                 <motion.div

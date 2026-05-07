@@ -160,17 +160,33 @@ const RecapCard = React.forwardRef(({ season }, ref) => {
         <div style={awardCard('rgba(245,158,11,0.12)', 'rgba(245,158,11,0.35)')}>
           <div style={{ fontSize: 44, marginBottom: 8 }}>🥄</div>
           <div style={awardLabel('#FCD34D')}>Wooden Spoon Leader</div>
-          <div style={awardName}>{awards.wooden_spoon_leader?.player || '—'}</div>
-          {awards.wooden_spoon_leader?.count > 0 && (
-            <div style={awardSub('#FCD34D')}>{awards.wooden_spoon_leader.count}× worst round</div>
+          <div style={awardName}>{awards.wooden_spoon_leader?.[0]?.player || '—'}</div>
+          {awards.wooden_spoon_leader?.length > 0 && (
+            <div style={awardSub('#FCD34D')}>{Math.round(awards.wooden_spoon_leader[0].average * 10) / 10} avg · {awards.wooden_spoon_leader[0].rounds} rounds</div>
           )}
         </div>
         <div style={awardCard('rgba(168,85,247,0.12)', 'rgba(168,85,247,0.35)')}>
           <div style={{ fontSize: 44, marginBottom: 8 }}>🎭</div>
           <div style={awardLabel('#D8B4FE')}>Joker King</div>
-          <div style={awardName}>{awards.joker_king?.player || '—'}</div>
-          {awards.joker_king?.bonus > 0 && (
-            <div style={awardSub('#D8B4FE')}>+{awards.joker_king.bonus} bonus pts</div>
+          <div style={awardName}>{awards.joker_king?.[0]?.player || '—'}</div>
+          {awards.joker_king?.length > 0 && (
+            <div style={awardSub('#D8B4FE')}>+{awards.joker_king[0].totalBonus} bonus pts across {awards.joker_king[0].rounds?.length || 0} joker holes</div>
+          )}
+        </div>
+        <div style={awardCard('rgba(244,63,94,0.12)', 'rgba(244,63,94,0.35)')}>
+          <div style={{ fontSize: 44, marginBottom: 8 }}>🍺</div>
+          <div style={awardLabel('#FCA5A5')}>Beer King</div>
+          <div style={awardName}>{awards.beer_king?.map(p => p.player).join(' & ') || '—'}</div>
+          {awards.beer_king?.length > 0 && (
+            <div style={awardSub('#FCA5A5')}>{awards.beer_king[0].count}× buying drinks</div>
+          )}
+        </div>
+        <div style={awardCard('rgba(234,179,8,0.12)', 'rgba(234,179,8,0.35)')}>
+          <div style={{ fontSize: 44, marginBottom: 8 }}>👑</div>
+          <div style={awardLabel('#FDE047')}>Golden Round</div>
+          <div style={awardName}>{awards.golden_round?.[0]?.player || '—'}</div>
+          {awards.golden_round?.length > 0 && (
+            <div style={awardSub('#FDE047')}>{awards.golden_round[0].total} pts · {awards.golden_round[0].course}</div>
           )}
         </div>
       </div>

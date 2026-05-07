@@ -814,6 +814,8 @@ const SeasonPanel = ({ onSeasonChanged }) => {
   const [newSeasonName, setNewSeasonName] = useState('');
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [archiveSuccess, setArchiveSuccess] = useState(false);
+  const [archivedSeasonName, setArchivedSeasonName] = useState('');
   // Expanded archive row
   const [openArchived, setOpenArchived] = useState(null);
   const [recapSeason, setRecapSeason] = useState(null);
@@ -864,11 +866,13 @@ const SeasonPanel = ({ onSeasonChanged }) => {
     if (!newSeasonName.trim()) return;
     setArchiving(true); setMsg('');
     try {
+      const archivedSeasonName = current?.name || 'The previous season';
       await db.archiveAndStartNewSeason(newSeasonName.trim());
       setArchiveOpen(false);
       setConfirmArchive(false);
       await load();
-      setMsg(`✅ Season archived. New season "${newSeasonName.trim()}" is now active. Refresh the dashboard to see a clean slate.`);
+      setArchivedSeasonName(archivedSeasonName);
+      setArchiveSuccess(true);
       onSeasonChanged?.();
     } catch (e) { setMsg('Error: ' + e.message); }
     finally { setArchiving(false); }
@@ -972,72 +976,216 @@ const SeasonPanel = ({ onSeasonChanged }) => {
         confirmLabel={archiving ? 'Working…' : 'Archive & start new'}
         onConfirm={doArchive}
         onClose={() => setConfirmArchive(false)}
+        busy={archiving}
+        closeOnConfirm={false}
+      />
+
+      {/* Archive Success Modal */}
+      <ConfirmModal
+        open={archiveSuccess}
+        title="Season Archived Successfully!"
+        message={`"${archivedSeasonName}" has been archived with all awards and standings. The new season "${newSeasonName.trim()}" is now active.`}
+        confirmLabel="Start New Season"
+        onConfirm={() => {
+          setArchiveSuccess(false);
+          setNewSeasonName('');
+          setArchivedSeasonName('');
+        }}
+        onClose={() => {
+          setArchiveSuccess(false);
+          setNewSeasonName('');
+          setArchivedSeasonName('');
+        }}
       />
 
       {/* Archived seasons */}
-      <h4 className="text-xs text-[#A9C5B4]/80 uppercase tracking-wider mb-2 flex items-center gap-2"><Trophy size={12} className="text-[#D4AF37]" weight="duotone" /> Season History ({archived.length})</h4>
+      <h4 className="text-xs text-[#A9C5B4]/80 uppercase tracking-wider mb-3 flex items-center gap-2"><Trophy size={12} className="text-[#D4AF37]" weight="duotone" /> Season History ({archived.length})</h4>
       {archived.length === 0 ? (
-        <p className="text-[11px] text-[#A9C5B4]/60 italic py-3">No archived seasons yet.</p>
+        <div className="text-center py-6">
+          <Flag size={24} className="text-[#D4AF37]/30 mx-auto mb-2" />
+          <p className="text-[11px] text-[#A9C5B4]/60 italic">No archived seasons yet</p>
+        </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {archived.map(s => {
             const champ = s.summary_json?.champion;
             const team = s.summary_json?.champion_team;
             const isOpen = openArchived === s.id;
+            const endDate = s.ended_at ? new Date(s.ended_at) : null;
             return (
-              <div key={s.id} className="rounded-lg border border-[#D4AF37]/15 bg-[#051A10]/60">
-                <button onClick={() => setOpenArchived(isOpen ? null : s.id)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#D4AF37]/5" data-testid={`archived-season-${s.id}`}>
-                  <Flag size={16} className="text-[#D4AF37]/80" weight="duotone" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-semibold truncate">{s.name}</p>
-                    <p className="text-[11px] text-[#A9C5B4]">
-                      Ended {s.ended_at ? new Date(s.ended_at).toLocaleDateString() : '—'}
-                      {champ && <span className="ml-2">· 🏆 {champ.player || champ.Player} · {champ.total ?? champ.Total} pts</span>}
-                    </p>
+              <div key={s.id} className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/40 backdrop-blur-sm overflow-hidden">
+                <button 
+                  onClick={() => setOpenArchived(isOpen ? null : s.id)} 
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#D4AF37]/8 transition-colors" 
+                  data-testid={`archived-season-${s.id}`}
+                >
+                  <div className="w-8 h-8 rounded-lg bg-[#D4AF37]/10 flex items-center justify-center flex-shrink-0">
+                    <Flag size={14} className="text-[#D4AF37]" weight="duotone" />
                   </div>
-                  <motion.div animate={{ rotate: isOpen ? 180 : 0 }} className="text-[#A9C5B4]"><CaretDown size={14} /></motion.div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-semibold truncate leading-tight">{s.name}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] text-[#A9C5B4]/80">
+                        {endDate ? endDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—'}
+                      </span>
+                      {champ && (
+                        <>
+                          <span className="text-[#A9C5B4]/40">•</span>
+                          <span className="text-[10px] text-[#D4AF37] font-medium">
+                            🏆 {champ.player || champ.Player}
+                          </span>
+                          <span className="text-[10px] text-[#A9C5B4]/80">
+                            {champ.total ?? champ.Total} pts
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <motion.div animate={{ rotate: isOpen ? 180 : 0 }} className="text-[#A9C5B4]/60 flex-shrink-0">
+                    <CaretDown size={14} />
+                  </motion.div>
                 </button>
                 <AnimatePresence initial={false}>
                   {isOpen && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
-                      <div className="px-4 pb-4 pt-1 border-t border-[#D4AF37]/10 space-y-3 text-xs">
-                        {champ && (
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wider text-[#D4AF37]/80 mb-1">League Champion</p>
-                            <p className="text-white font-semibold">{champ.player || champ.Player} — {champ.total ?? champ.Total} pts</p>
+                    {s.summary_json && (
+                      <div className="px-4 pb-4 bg-[#051A10]/30">
+                        {/* Champion Section */}
+                        {(s.summary_json?.champion?.player || s.summary_json?.champion_team?.player) && (
+                          <div className="mb-4 pb-3 border-b border-[#D4AF37]/10">
+                            <h5 className="text-xs text-[#A9C5B4]/80 uppercase tracking-wider mb-2">Champions</h5>
+                            {s.summary_json?.champion?.player && (
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-lg">🏆</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-white text-sm font-medium">{s.summary_json.champion.player}</p>
+                                  <p className="text-[10px] text-[#A9C5B4]/70">{s.summary_json.champion.total} points</p>
+                                </div>
+                              </div>
+                            )}
+                            {s.summary_json?.champion_team?.player && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg">👑</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-white text-sm font-medium">{s.summary_json.champion_team.player}</p>
+                                  <p className="text-[10px] text-[#A9C5B4]/70">{s.summary_json.champion_team.total} points</p>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
-                        {team && (
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wider text-[#D4AF37]/80 mb-1">Top Team</p>
-                            <p className="text-white font-semibold">{team.player || team.Team || team.team} — {team.total ?? team.Total} pts</p>
-                          </div>
-                        )}
-                        {s.summary_json?.awards?.season && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-[#D4AF37]/10">
-                            <div className="rounded-md bg-amber-500/10 border border-amber-500/20 px-2 py-1.5">
-                              <p className="text-[10px] text-amber-300 uppercase tracking-wider">🥄 Wooden Spoon Leader</p>
-                              <p className="text-white text-sm font-semibold">{s.summary_json.awards.season.wooden_spoon_leader?.player || '—'}</p>
+                        
+                        {/* Season Awards */}
+                        {(s.summary_json?.awards?.season?.wooden_spoon_leader?.length > 0 || 
+                          s.summary_json?.awards?.season?.joker_king?.length > 0 ||
+                          s.summary_json?.awards?.season?.beer_king?.length > 0 ||
+                          s.summary_json?.awards?.season?.golden_round?.length > 0) && (
+                          <div className="mb-4 pb-3 border-b border-[#D4AF37]/10">
+                            <h5 className="text-xs text-[#A9C5B4]/80 uppercase tracking-wider mb-2">Season Awards</h5>
+                            <div className="grid grid-cols-1 gap-2">
+                              {s.summary_json?.awards?.season?.golden_round?.length > 0 && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-base">👑</span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-white text-sm">{s.summary_json.awards.season.golden_round[0].player}</p>
+                                    <p className="text-[10px] text-[#A9C5B4]/70">Golden Round • {s.summary_json.awards.season.golden_round[0].total} pts</p>
+                                  </div>
+                                </div>
+                              )}
+                              {s.summary_json?.awards?.season?.joker_king?.length > 0 && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-base">🎭</span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-white text-sm">{s.summary_json.awards.season.joker_king[0].player}</p>
+                                    <p className="text-[10px] text-[#A9C5B4]/70">Joker King • +{s.summary_json.awards.season.joker_king[0].totalBonus} pts</p>
+                                  </div>
+                                </div>
+                              )}
+                              {s.summary_json?.awards?.season?.beer_king?.length > 0 && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-base">🍺</span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-white text-sm">{s.summary_json.awards.season.beer_king.map(p => p.player).join(' & ')}</p>
+                                    <p className="text-[10px] text-[#A9C5B4]/70">Beer King • {s.summary_json.awards.season.beer_king[0].count} wins</p>
+                                  </div>
+                                </div>
+                              )}
+                              {s.summary_json?.awards?.season?.wooden_spoon_leader?.length > 0 && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-base">🥄</span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-white text-sm">{s.summary_json.awards.season.wooden_spoon_leader[0].player}</p>
+                                    <p className="text-[10px] text-[#A9C5B4]/70">Wooden Spoon • {s.summary_json.awards.season.wooden_spoon_leader[0].average.toFixed(1)} avg</p>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                            <div className="rounded-md bg-purple-500/10 border border-purple-500/20 px-2 py-1.5">
-                              <p className="text-[10px] text-purple-300 uppercase tracking-wider">🎭 Joker King</p>
-                              <p className="text-white text-sm font-semibold">{s.summary_json.awards.season.joker_king?.player || '—'}</p>
+                          </div>
+                        )}
+                        {/* Per-Round Awards */}
+                        {s.summary_json?.awards?.per_round?.length > 0 && (
+                          <div>
+                            <h5 className="text-xs text-[#A9C5B4]/80 uppercase tracking-wider mb-2">Round Highlights</h5>
+                            <div className="space-y-2">
+                              {s.summary_json.awards.per_round.slice(0, 3).map((round, idx) => (
+                                <div key={idx} className="bg-[#051A10]/40 rounded-lg p-2">
+                                  <p className="text-white text-xs font-medium mb-1">Round {round.round_number}</p>
+                                  <div className="flex flex-wrap gap-x-2 gap-y-1">
+                                    {round.wooden_spoon && (
+                                      <span className="inline-flex items-center gap-1 text-[10px] text-[#A9C5B4]">
+                                        🥄 {round.wooden_spoon.player}
+                                      </span>
+                                    )}
+                                    {round.freeze && (
+                                      <span className="inline-flex items-center gap-1 text-[10px] text-[#A9C5B4]">
+                                        🧊 {round.freeze.player}
+                                      </span>
+                                    )}
+                                    {round.heater && (
+                                      <span className="inline-flex items-center gap-1 text-[10px] text-[#A9C5B4]">
+                                        🔥 {round.heater.player}
+                                      </span>
+                                    )}
+                                    {round.clutch_king && (
+                                      <span className="inline-flex items-center gap-1 text-[10px] text-[#A9C5B4]">
+                                        🎯 {round.clutch_king.player}
+                                      </span>
+                                    )}
+                                    {round.slow_starter && (
+                                      <span className="inline-flex items-center gap-1 text-[10px] text-[#A9C5B4]">
+                                        🐌 {round.slow_starter.player}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         )}
-                        <button
-                          onClick={() => setRecapSeason(s)}
-                          className="w-full py-2 rounded-lg border border-[#D4AF37]/40 text-[#D4AF37] text-xs font-semibold hover:bg-[#D4AF37]/10 transition-colors flex items-center justify-center gap-2 mt-2"
-                          data-testid={`archive-share-${s.id}`}
-                        >
-                          📸 Share season recap
-                        </button>
+                        
+                        {/* Action Buttons */}
+                        <div className="flex gap-2 mt-4 pt-3 border-t border-[#D4AF37]/10">
+                          <button
+                            onClick={() => setRecapSeason(s)}
+                            className="flex-1 py-2 rounded-lg border border-[#D4AF37]/40 text-[#D4AF37] text-xs font-semibold hover:bg-[#D4AF37]/10 transition-colors flex items-center justify-center gap-2"
+                            data-testid={`archive-share-${s.id}`}
+                          >
+                            � Recap
+                          </button>
+                          <button
+                            onClick={() => setOpenArchived(null)}
+                            className="px-4 py-2 rounded-lg border border-[#A9C5B4]/30 text-[#A9C5B4] text-xs font-semibold hover:bg-[#A9C5B4]/10 transition-colors"
+                          >
+                            Close
+                          </button>
+                        </div>
                       </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            );
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
           })}
         </div>
       )}

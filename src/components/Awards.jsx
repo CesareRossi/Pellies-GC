@@ -1,13 +1,22 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Flag, CaretDown } from '@phosphor-icons/react';
+import { Lock, Flag, CaretDown, Trophy } from '@phosphor-icons/react';
+
+// Icon mapping for per-round awards
+const awardIcons = {
+  wooden_spoon: <span className="text-amber-300 text-sm">🥄</span>,
+  freeze: <span className="text-blue-300 text-sm">❄️</span>,
+  heater: <span className="text-orange-300 text-sm">🔥</span>,
+  slow_starter: <span className="text-green-300 text-sm">🐢</span>,
+  clutch_king: <span className="text-purple-300 text-sm">🎯</span>,
+};
 
 const tileDefs = [
-  { emoji: '🥄', key: 'wooden_spoon', label: 'Wooden Spoon', detail: (d) => d ? `${d.points} pts` : '—' },
-  { emoji: '🧊', key: 'freeze',       label: 'Freeze',       detail: (d) => d ? `${d.drop > 0 ? '−' + d.drop : d.drop < 0 ? '+' + Math.abs(d.drop) : '0'} pts F→B` : '—' },
-  { emoji: '🔥', key: 'heater',       label: 'Heater',       detail: (d) => d ? `${d.gain > 0 ? '+' + d.gain : d.gain < 0 ? d.gain : '0'} pts B9` : '—' },
-  { emoji: '🐢', key: 'slow_starter', label: 'Slow Start',   detail: (d) => d ? `${d.points} pts H1-3` : '—' },
-  { emoji: '🎯', key: 'clutch_king',  label: 'Clutch King',  detail: (d) => d ? `${d.points} pts H16-18` : '—' },
+  { key: 'wooden_spoon', label: 'Wooden Spoon', detail: (d) => d ? `${d.points} pts` : '—' },
+  { key: 'freeze',       label: 'Freeze',       detail: (d) => d ? `${d.drop > 0 ? '−' + d.drop : d.drop < 0 ? '+' + Math.abs(d.drop) : '0'} pts F→B` : '—' },
+  { key: 'heater',       label: 'Heater',       detail: (d) => d ? `${d.gain > 0 ? '+' + d.gain : d.gain < 0 ? d.gain : '0'} pts B9` : '—' },
+  { key: 'slow_starter', label: 'Slow Start',   detail: (d) => d ? `${d.points} pts H1-3` : '—' },
+  { key: 'clutch_king',  label: 'Clutch King',  detail: (d) => d ? `${d.points} pts H16-18` : '—' },
 ];
 
 function formatNames(names) {
@@ -169,14 +178,14 @@ function RoundRow({ round, index, openDefault = false }) {
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-2 mt-3">
                 {tileDefs.map(t => (
                   <div key={t.key} className="rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10 px-2.5 py-2">
-                    <p className="text-[10px] text-[#A9C5B4]/70 uppercase tracking-wider mb-0.5 flex items-center gap-1"><span>{t.emoji}</span><span>{t.label}</span></p>
+                    <p className="text-[10px] text-[#A9C5B4]/70 uppercase tracking-wider mb-0.5 flex items-center gap-1">{awardIcons[t.key]}<span>{t.label}</span></p>
                     <p className="text-white text-sm font-semibold truncate">{round[t.key]?.player || '—'}</p>
                     <p className="text-[10px] text-[#A9C5B4]">{t.detail(round[t.key])}</p>
                   </div>
                 ))}
                 {round.beer_hole_winner && !round.beer_hole_winner.tied && (
                   <div className="rounded-lg bg-rose-500/10 border border-rose-500/25 px-2.5 py-2">
-                    <p className="text-[10px] text-rose-300 uppercase tracking-wider mb-0.5 flex items-center gap-1"><span>🍺</span><span>Beer Hole {round.beer_hole}</span></p>
+                    <p className="text-[10px] text-rose-300 uppercase tracking-wider mb-0.5 flex items-center gap-1"><span className="text-rose-300">🍺</span><span>Beer Hole {round.beer_hole}</span></p>
                     <p className="text-white text-sm font-semibold truncate">{formatNames(round.beer_hole_winner.names)}</p>
                     <p className="text-[10px] text-rose-300/80">
                       {round.beer_hole_winner.strokes} strokes · buys drinks
@@ -185,7 +194,7 @@ function RoundRow({ round, index, openDefault = false }) {
                 )}
                 {round.joker_hole_winner && (
                   <div className="rounded-lg bg-purple-500/10 border border-purple-500/25 px-2.5 py-2">
-                    <p className="text-[10px] text-purple-300 uppercase tracking-wider mb-0.5 flex items-center gap-1"><span>🎭</span><span>Joker H{round.joker_hole}</span></p>
+                    <p className="text-[10px] text-purple-300 uppercase tracking-wider mb-0.5 flex items-center gap-1"><span className="text-purple-300">🎭</span><span>Joker H{round.joker_hole}</span></p>
                     <p className="text-white text-sm font-semibold truncate">{round.joker_hole_winner.name}</p>
                     <p className="text-[10px] text-purple-300/80">+{round.joker_hole_winner.bonus} bonus pts</p>
                   </div>
@@ -198,7 +207,7 @@ function RoundRow({ round, index, openDefault = false }) {
                 <div className="rounded-lg bg-rose-500/10 border border-rose-500/25 px-3 py-2.5 mt-2" data-testid={`beer-tie-${round.round_number}`}>
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-[10px] text-rose-300 uppercase tracking-wider flex items-center gap-1">
-                      <span>🍺</span>
+                      <span className="text-rose-300">🍺</span>
                       <span>Beer Hole {round.beer_hole} · {round.beer_hole_winner.strokes} strokes</span>
                     </p>
                     <p className="text-[10px] uppercase tracking-wider text-rose-200 font-semibold">
@@ -217,115 +226,144 @@ function RoundRow({ round, index, openDefault = false }) {
 }
 
 export default function Awards({ awards }) {
-  const done = awards?.rounds_complete ?? 0;
-  const total = awards?.total_rounds ?? 0;
+  const awardsData = awards || {};
+  const done = awardsData?.rounds_complete ?? 0;
+  const total = awardsData?.total_rounds ?? 0;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  // Gated: season not complete — show lock + Drinks Watch
-  if (!awards?.season_complete) {
+  // If season not complete, show locked state
+  if (!awardsData?.season_complete) {
+    const isNewSeason = total === 0;
+    
     return (
       <div className="max-w-2xl mx-auto py-10 px-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-2"
-          data-testid="awards-locked"
-        >
+        <div className="text-center mb-2">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 mb-4">
-            <Lock size={28} className="text-[#D4AF37]" weight="duotone" />
+            {isNewSeason ? (
+              <Flag size={28} className="text-[#D4AF37]" weight="duotone" />
+            ) : (
+              <Lock size={28} className="text-[#D4AF37]" weight="duotone" />
+            )}
           </div>
-          <h2 className="text-2xl sm:text-3xl font-sans text-[#D4AF37] mb-2">Season Awards Locked</h2>
+          <h2 className="text-2xl sm:text-3xl font-sans text-[#D4AF37] mb-2">
+            {isNewSeason ? 'New Season Started' : 'Season Awards Locked'}
+          </h2>
           <p className="text-[#A9C5B4] text-sm max-w-md mx-auto mb-6 leading-relaxed">
-            Full banter unlocks once every player has logged every round.
+            {isNewSeason 
+              ? 'No rounds have been set up yet. Awards will appear once rounds are played and scores are entered.'
+              : 'Full banter unlocks once every player has logged every round.'
+            }
           </p>
-          <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/80 p-4 max-w-sm mx-auto">
-            <div className="flex items-center justify-between mb-2 text-[11px] text-[#A9C5B4] uppercase tracking-wider">
-              <span>Progress</span>
-              <span className="font-bold text-[#D4AF37]">{done} / {total} rounds</span>
+          {!isNewSeason && (
+            <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/80 p-4 max-w-sm mx-auto">
+              <div className="flex items-center justify-between mb-2 text-[11px] text-[#A9C5B4] uppercase tracking-wider">
+                <span>Progress</span>
+                <span className="font-bold text-[#D4AF37]">{done} / {total} rounds</span>
+              </div>
+              <div className="h-2 rounded-full bg-[#051A10] overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-[#D4AF37] to-[#F1D67E]" style={{width: `${pct}%`}} />
+              </div>
             </div>
-            <div className="h-2 rounded-full bg-[#051A10] overflow-hidden">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${pct}%` }}
-                transition={{ duration: 0.8, ease: 'easeOut' }}
-                className="h-full bg-gradient-to-r from-[#D4AF37] to-[#F1D67E]"
-              />
-            </div>
-          </div>
-        </motion.div>
-        {awards?.per_round && <DrinksWatch perRound={awards.per_round} />}
+          )}
+        </div>
+        {awardsData?.per_round && <DrinksWatch perRound={awardsData.per_round} />}
       </div>
     );
   }
 
-  const season = awards.season || {};
+  const season = awardsData.season || {};
+  
+  // Check if all awards are empty
+  const hasNoWinners = !season.golden_round?.length && 
+                     !season.joker_king?.length && 
+                     !season.beer_king?.length && 
+                     !season.wooden_spoon_leader?.length;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto" data-testid="awards-section">
-      {/* Refined header */}
+    <div className="max-w-4xl mx-auto py-10 px-4">
+      {/* Header */}
       <div className="text-center mb-8">
         <p className="text-[11px] text-[#D4AF37]/80 uppercase tracking-[0.25em] mb-1">Season Complete</p>
         <h2 className="text-3xl sm:text-4xl font-sans text-[#D4AF37] mb-1">Awards</h2>
-        <p className="text-xs text-[#A9C5B4]">{total} rounds · {awards.active_players} players</p>
+        <p className="text-xs text-[#A9C5B4]">{total} rounds · {awardsData.active_players || 0} players</p>
       </div>
 
-      {/* Season headlines — 4 hero cards with tie support */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
-        {/* Golden Round — Best single round */}
-        <div className="rounded-xl border border-yellow-500/25 bg-gradient-to-br from-yellow-500/10 to-transparent p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-2xl">👑</span>
-            <span className="text-[11px] uppercase tracking-[0.15em] text-yellow-300 font-semibold">Golden Round</span>
-          </div>
-          <p className="text-white font-bold text-xl">{formatNamesFromArray(season.golden_round)}</p>
-          <p className="text-[#A9C5B4] text-xs mt-0.5">
-            {season.golden_round?.length > 0 ? `${season.golden_round[0].total} pts · ${season.golden_round[0].course}` : 'No rounds played yet'}
+      {/* No awards message */}
+      {hasNoWinners && (
+        <div className="text-center py-12">
+          <Trophy size={48} className="text-[#D4AF37]/30 mx-auto mb-4" />
+          <h3 className="text-xl font-sans text-[#D4AF37] mb-2">No Awards This Season</h3>
+          <p className="text-[#A9C5B4] text-sm max-w-md mx-auto">
+            Awards like Golden Round, Joker King, Beer King, and Wooden Spoon will appear once players start scoring rounds.
           </p>
         </div>
-        {/* Joker King — Most bonus points combined */}
-        <div className="rounded-xl border border-purple-500/25 bg-gradient-to-br from-purple-500/10 to-transparent p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-2xl">🎭</span>
-            <span className="text-[11px] uppercase tracking-[0.15em] text-purple-300 font-semibold">Joker King</span>
-          </div>
-          <p className="text-white font-bold text-xl">{formatNamesFromArray(season.joker_king)}</p>
-          <p className="text-[#A9C5B4] text-xs mt-0.5">
-            {season.joker_king?.length > 0 ? `+${season.joker_king[0].totalBonus} bonus pts across ${season.joker_king[0].rounds?.length || 0} joker hole${season.joker_king[0].rounds?.length !== 1 ? 's' : ''}` : 'No joker holes played yet'}
-          </p>
-        </div>
-        {/* Beer King — Most beers bought */}
-        <div className="rounded-xl border border-rose-500/25 bg-gradient-to-br from-rose-500/10 to-transparent p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-2xl">🍺</span>
-            <span className="text-[11px] uppercase tracking-[0.15em] text-rose-300 font-semibold">Beer King</span>
-          </div>
-          <p className="text-white font-bold text-xl">{formatNamesFromArray(season.beer_king)}</p>
-          <p className="text-[#A9C5B4] text-xs mt-0.5">
-            {season.beer_king?.length > 0 ? `${season.beer_king[0].count}× buying drinks · ${season.beer_king[0].count === 1 ? 'a true legend' : 'the most generous'}` : 'No beer holes yet'}
-          </p>
-        </div>
-        {/* Wooden Spoon — Lowest average across played rounds only */}
-        <div className="rounded-xl border border-amber-500/25 bg-gradient-to-br from-amber-500/10 to-transparent p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-2xl">🥄</span>
-            <span className="text-[11px] uppercase tracking-[0.15em] text-amber-300 font-semibold">Wooden Spoon</span>
-          </div>
-          <p className="text-white font-bold text-xl">{formatNamesFromArray(season.wooden_spoon_leader)}</p>
-          <p className="text-[#A9C5B4] text-xs mt-0.5">
-            {season.wooden_spoon_leader?.length > 0 ? `${Math.round(season.wooden_spoon_leader[0].average * 10) / 10} avg · ${season.wooden_spoon_leader[0].rounds} rounds` : 'No rounds completed'}
-          </p>
-        </div>
-      </div>
+      )}
 
-      {/* Per-round awards — accordion list */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs text-[#A9C5B4] uppercase tracking-[0.15em]">Round-by-Round</h3>
-          <p className="text-[11px] text-[#A9C5B4]/60 italic hidden sm:block">Tap any round to expand</p>
+      {/* Season awards grid */}
+      {!hasNoWinners && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+          {/* Golden Round */}
+          <div className="bg-yellow-500/10 border border-yellow-500/30 p-5 rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-2xl">👑</span>
+              <span className="text-[11px] uppercase tracking-[0.15em] text-yellow-300 font-semibold">Golden Round</span>
+            </div>
+            <p className="text-white font-bold text-xl">{formatNamesFromArray(season.golden_round)}</p>
+            <p className="text-[#A9C5B4] text-xs mt-0.5">
+              {season.golden_round?.length > 0 ? `${season.golden_round[0].total} pts · ${season.golden_round[0].course || 'Unknown course'}` : 'No rounds played yet'}
+            </p>
+          </div>
+
+          {/* Joker King */}
+          <div className="bg-purple-500/10 border border-purple-500/30 p-5 rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-2xl">🎭</span>
+              <span className="text-[11px] uppercase tracking-[0.15em] text-purple-300 font-semibold">Joker King</span>
+            </div>
+            <p className="text-white font-bold text-xl">{formatNamesFromArray(season.joker_king)}</p>
+            <p className="text-[#A9C5B4] text-xs mt-0.5">
+              {season.joker_king?.length > 0 ? `+${season.joker_king[0].totalBonus || 0} bonus pts across ${season.joker_king[0].rounds?.length || 0} joker hole${(season.joker_king[0].rounds?.length || 0) !== 1 ? 's' : ''}` : 'No joker holes played yet'}
+            </p>
+          </div>
+
+          {/* Beer King */}
+          <div className="bg-rose-500/10 border border-rose-500/30 p-5 rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-2xl">🍺</span>
+              <span className="text-[11px] uppercase tracking-[0.15em] text-rose-300 font-semibold">Beer King</span>
+            </div>
+            <p className="text-white font-bold text-xl">{formatNamesFromArray(season.beer_king)}</p>
+            <p className="text-[#A9C5B4] text-xs mt-0.5">
+              {season.beer_king?.length > 0 ? `${season.beer_king[0].count || 0}× buying drinks · ${(season.beer_king[0].count || 0) === 1 ? 'a true legend' : 'the most generous'}` : 'No beer holes yet'}
+            </p>
+          </div>
+
+          {/* Wooden Spoon */}
+          <div className="bg-amber-500/10 border border-amber-500/30 p-5 rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-2xl">🥄</span>
+              <span className="text-[11px] uppercase tracking-[0.15em] text-amber-300 font-semibold">Wooden Spoon</span>
+            </div>
+            <p className="text-white font-bold text-xl">{formatNamesFromArray(season.wooden_spoon_leader)}</p>
+            <p className="text-[#A9C5B4] text-xs mt-0.5">
+              {season.wooden_spoon_leader?.length > 0 ? `${Math.round((season.wooden_spoon_leader[0].average || 0) * 10) / 10} avg · ${season.wooden_spoon_leader[0].rounds || 0} rounds` : 'No rounds completed'}
+            </p>
+          </div>
         </div>
-        <div className="space-y-2">
-          {awards.per_round.map((r, i) => <RoundRow key={r.round_number} round={r} index={i} openDefault={i === 0} />)}
+      )}
+
+      {/* Per-round awards */}
+      {(awardsData.per_round || []).length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs text-[#A9C5B4] uppercase tracking-[0.15em]">Round-by-Round</h3>
+            <p className="text-[11px] text-[#A9C5B4]/60 italic hidden sm:block">Tap any round to expand</p>
+          </div>
+          <div className="space-y-2">
+            {(awardsData.per_round || []).map((r, i) => <RoundRow key={r.round_number} round={r} index={i} openDefault={i === 0} />)}
+          </div>
         </div>
-      </div>
-    </motion.div>
+      )}
+    </div>
   );
 }

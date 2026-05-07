@@ -1034,6 +1034,24 @@ export async function getAwards() {
     withTimeout(supabase.from('round_exclusions').select('round_id, player_id'), 10000, 'exclusions'),
   ]);
   const allScores = scoresRes.data || [];
+
+  // If no scores, return empty awards
+  if (allScores.length === 0) {
+    console.log('No scores found in database for awards computation');
+    return {
+      season_complete: false,
+      rounds_complete: 0,
+      total_rounds: rounds.length,
+      active_players: players.filter(p => p.is_active).length,
+      per_round: [],
+      season: {
+        wooden_spoon_leader: [],
+        joker_king: [],
+        beer_king: [],
+        golden_round: [],
+      },
+    };
+  }
   // Map of roundId -> Set of excluded playerIds
   const excludedByRound = {};
   for (const e of (exclusionsRes.data || [])) {
@@ -1727,6 +1745,31 @@ export async function getCurrentRound() {
   return data;
 }
 
+// Helper: delete all rows from a table with retry on supabase-js body-stream errors.
+async function safeDelete(table, column = 'id', notEqual = 0, attempts = 3) {
+  const isStreamError = (e) => {
+    const m = (e?.message || '').toLowerCase();
+    return m.includes('body stream') || m.includes('already read');
+  };
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const { error } = await supabase.from(table).delete().neq(column, notEqual);
+      if (error) {
+        if (isStreamError(error) && attempt < attempts - 1) {
+          await new Promise(r => setTimeout(r, 400));
+          continue;
+        }
+        throw error;
+      }
+      return;
+    } catch (e) {
+      if (!isStreamError(e)) throw e;
+      if (attempt === attempts - 1) throw e;
+      await new Promise(r => setTimeout(r, 400));
+    }
+  }
+}
+
 // Archive the current season and start a new one with `newName`.
 // Snapshot is computed live from the current state, then all rounds/scores/teams/exclusions
 // are wiped (players, courses and course_holes are preserved).
@@ -1766,15 +1809,32 @@ export async function archiveAndStartNewSeason(newName) {
 
   // 3. Wipe scores/teams/round_exclusions/rounds (keep players, courses, course_holes)
   //    Legacy round_holes table is also cleaned if it still exists.
-  const { error: eScores } = await supabase.from('scores').delete().neq('id', 0);
-  if (eScores) throw new Error(`Failed to wipe scores: ${eScores.message}`);
-  const { error: eTeams } = await supabase.from('teams').delete().neq('id', 0);
-  if (eTeams) throw new Error(`Failed to wipe teams: ${eTeams.message}`);
+  //    First clear foreign key references to avoid constraint violations.
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  // Clear current_round_id reference from ALL seasons before deleting rounds
+  const { error: eClearRef } = await supabase
+    .from('seasons')
+    .update({ current_round_id: null })
+    .neq('id', 0);
+  if (eClearRef) throw new Error(`Failed to clear round references: ${eClearRef.message}`);
+  await delay(150);
+
+  await safeDelete('scores', 'id', 0);
+  await delay(150);
+
+  await safeDelete('teams', 'id', 0);
+  await delay(150);
+
   // round_exclusions cascades when rounds are deleted, but clear explicitly for safety
-  await supabase.from('round_exclusions').delete().neq('round_id', 0);
-  await supabase.from('round_holes').delete().neq('id', 0);
-  const { error: eRounds } = await supabase.from('rounds').delete().neq('id', 0);
-  if (eRounds) throw new Error(`Failed to wipe rounds: ${eRounds.message}`);
+  await safeDelete('round_exclusions', 'round_id', 0);
+  await delay(150);
+
+  await safeDelete('round_holes', 'id', 0);
+  await delay(150);
+
+  await safeDelete('rounds', 'id', 0);
+  await delay(150);
 
   // 4. Insert the new active season
   const { data: created, error: eNew } = await supabase

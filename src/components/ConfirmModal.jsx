@@ -7,7 +7,7 @@ import { WarningCircle, X } from '@phosphor-icons/react';
  * In-app confirm modal to replace browser window.confirm()
  * Rendered via portal so transformed parents don't break position:fixed
  */
-export default function ConfirmModal({ open, title, message, confirmLabel = 'Confirm', danger = true, onConfirm, onClose }) {
+export default function ConfirmModal({ open, title, message, confirmLabel = 'Confirm', danger = true, busy = false, closeOnConfirm = true, onConfirm, onClose }) {
   return createPortal(
     <AnimatePresence>
       {open && (
@@ -16,7 +16,7 @@ export default function ConfirmModal({ open, title, message, confirmLabel = 'Con
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-[200] flex items-center justify-center bg-[#051A10]/80 backdrop-blur-sm"
-          onClick={onClose}
+          onClick={busy ? undefined : onClose}
           data-testid="confirm-modal"
         >
           <motion.div
@@ -34,20 +34,24 @@ export default function ConfirmModal({ open, title, message, confirmLabel = 'Con
                 <h3 className="text-base font-sans text-[#D4AF37] mb-1">{title}</h3>
                 <p className="text-sm text-[#A9C5B4] leading-relaxed">{message}</p>
               </div>
-              <button onClick={onClose} className="text-[#A9C5B4] hover:text-white -mt-1"><X size={18} /></button>
+              {!busy && (
+                <button onClick={onClose} className="text-[#A9C5B4] hover:text-white -mt-1"><X size={18} /></button>
+              )}
             </div>
             <div className="flex gap-2 justify-end mt-5">
               <button
                 onClick={onClose}
+                disabled={busy}
                 data-testid="confirm-cancel"
-                className="px-4 py-2 text-sm rounded-lg text-[#A9C5B4] hover:text-white hover:bg-[#163A27] transition-colors"
+                className="px-4 py-2 text-sm rounded-lg text-[#A9C5B4] hover:text-white hover:bg-[#163A27] transition-colors disabled:opacity-40"
               >
                 Cancel
               </button>
               <button
-                onClick={() => { onConfirm?.(); onClose?.(); }}
+                onClick={() => { onConfirm?.(); if (closeOnConfirm && !busy) onClose?.(); }}
+                disabled={busy}
                 data-testid="confirm-confirm"
-                className={`px-4 py-2 text-sm font-bold rounded-lg transition-colors ${danger ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-[#D4AF37] text-[#051A10] hover:bg-[#F1D67E]'}`}
+                className={`px-4 py-2 text-sm font-bold rounded-lg transition-colors disabled:opacity-50 ${danger ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-[#D4AF37] text-[#051A10] hover:bg-[#F1D67E]'}`}
               >
                 {confirmLabel}
               </button>
