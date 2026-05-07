@@ -425,40 +425,17 @@ export async function getScoresForRound(roundId) {
 }
 
 export async function upsertScores(scores) {
-  const isStreamError = (e) => {
-    const m = (e?.message || '').toLowerCase();
-    return m.includes('body stream') || m.includes('already read');
-  };
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const { data, error } = await supabase.from('scores').upsert(scores, { onConflict: 'round_id,player_id,hole_number' }).select();
-      if (error) {
-        if (isStreamError(error) && attempt < 2) { await new Promise(r => setTimeout(r, 500)); continue; }
-        throw error;
-      }
-      return data;
-    } catch (e) {
-      if (!isStreamError(e)) throw e;
-      // Stream error: wait, then verify by reading back
-      await new Promise(r => setTimeout(r, 500));
-      try {
-        const roundId = scores[0]?.round_id;
-        const playerId = scores[0]?.player_id;
-        if (roundId && playerId) {
-          const { data: verify } = await supabase.from('scores')
-            .select('hole_number, strokes')
-            .eq('round_id', roundId)
-            .eq('player_id', playerId);
-          if (verify && verify.length >= scores.length) {
-            const wrote = scores.every(s => verify.find(v => v.hole_number === s.hole_number && v.strokes === s.strokes));
-            if (wrote) return verify;
-          }
-        }
-      } catch (_) {}
-      if (attempt === 2) throw e;
-    }
+  // Check if round is closed first
+  const roundId = scores[0]?.round_id;
+  if (roundId) {
+    const { data: round, error: roundError } = await supabase.from('rounds').select('is_closed').eq('id', roundId).single();
+    if (roundError) throw roundError;
+    if (round?.is_closed) throw new Error('This round is closed. No scores can be added or changed.');
   }
-  throw new Error('Failed to save scores after 3 attempts. Please refresh and try again.');
+  
+  const { data, error } = await supabase.from('scores').upsert(scores, { onConflict: 'round_id,player_id,hole_number' }).select();
+  if (error) throw error;
+  return data;
 }
 
 // ===== TEAMS =====
@@ -533,6 +510,12 @@ export async function getAllUsers() {
 
 export async function updateUserRole(userId, role) {
   const { data, error } = await supabase.from('user_profiles').update({ role }).eq('id', userId).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateUserPlayerLink(userId, playerId) {
+  const { data, error } = await supabase.from('user_profiles').update({ player_id: playerId }).eq('id', userId).select().single();
   if (error) throw error;
   return data;
 }
@@ -1302,17 +1285,20 @@ export async function getAwards() {
 
 export async function getSeasonOverview() {
   // Parallelize all heavy fetches instead of awaiting sequentially (was ~20 sequential DB calls)
-  const [allRounds, allPlayers, stats, lbRes, teamLbRes] = await Promise.all([
+  const [allRounds, allPlayers, stats, lbRes, teamLbRes, scoresRes] = await Promise.all([
     getSetUpRounds(),
     getPlayers(),
     getPlayerStats(),
     getLeaderboardData(),
     getTeamLeaderboardData(),
+    supabase.from('scores').select('player_id').limit(1000),
   ]);
   const { leaderboard, rounds } = lbRes;
   const { leaderboard: teamLb } = teamLbRes;
-
-  const activePlayers = leaderboard.filter(p => p.total > 0).length;
+  
+  // Active players = anyone with at least one score entered (not just completed rounds)
+  const uniquePlayerIdsWithScores = new Set((scoresRes.data || []).map(s => s.player_id));
+  const activePlayers = uniquePlayerIdsWithScores.size;
   const coursesPlayed = rounds.map(r => r.courses?.name).filter(Boolean);
   const bestRound = stats.reduce((best, s) => s.best_round > best.score ? { player: s.name, score: s.best_round, course: s.best_round_name } : best, { player: '', score: 0, course: '' });
   const eagleLeader = stats.reduce((best, s) => s.eagles > best.count ? { player: s.name, count: s.eagles } : best, { player: '', count: 0 });

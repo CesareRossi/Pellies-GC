@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PencilSimple, Trash, Plus, Check, X, UserCircle, ShieldCheck, Clock, ShieldSlash, Warning, Flag, Trophy, CaretDown, Target } from '@phosphor-icons/react';
+import { PencilSimple, Trash, Plus, Check, X, UserCircle, ShieldCheck, Clock, ShieldSlash, Warning, Flag, Trophy, CaretDown, Target, Lock, LockOpen } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
 import { formatHandicap } from '../lib/utils';
 import ConfirmModal from './ConfirmModal';
@@ -240,10 +240,7 @@ const CoursesPanel = () => {
       <div className="space-y-2">{courses.map(c => (
         <div key={c.id} className={`flex items-center justify-between py-2.5 px-4 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10 ${!c.is_active ? 'opacity-50' : ''}`}>
           <div className="flex-1 min-w-0">
-            <p className="text-white text-sm font-semibold flex items-center gap-2">
-              {c.name}
-              {!c.is_active && <span className="text-[10px] uppercase tracking-wider text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded">Disabled</span>}
-            </p>
+            <p className="text-white text-sm font-semibold truncate">{c.name}</p>
             <p className="text-[#A9C5B4] text-xs">Par {c.par} &middot; Rating {c.rating} &middot; Slope {c.slope}</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -314,7 +311,7 @@ const CoursesPanel = () => {
 };
 
 // ===== ROUNDS =====
-const RoundsPanel = () => {
+const RoundsPanel = ({ onSeasonChanged }) => {
   const [rounds, setRounds] = useState([]);
   const [courses, setCourses] = useState([]);
   const [players, setPlayers] = useState([]);
@@ -329,6 +326,7 @@ const RoundsPanel = () => {
   // Confirmations
   const [confirmDel, setConfirmDel] = useState(null); // round to delete
   const [confirmClear, setConfirmClear] = useState(null); // round to clear scores
+  const [confirmCloseRound, setConfirmCloseRound] = useState(null); // round to close/reopen
   const [actionMsg, setActionMsg] = useState('');
   const [allExclusions, setAllExclusions] = useState([]);
   const [currentRoundId, setCurrentRoundId] = useState(null);
@@ -435,6 +433,29 @@ const RoundsPanel = () => {
       setTimeout(() => setActionMsg(''), 4000);
     } catch (e) { setActionMsg('Error: ' + e.message); }
   };
+  const doCloseRound = async () => {
+    if (!confirmCloseRound) return;
+    setActionMsg('');
+    try {
+      const wasClosing = !confirmCloseRound.is_closed;
+      await db.updateRound(confirmCloseRound.id, { is_closed: wasClosing });
+      
+      // If closing the current live round, set next open round as current
+      if (wasClosing && currentRoundId === confirmCloseRound.id) {
+        const nextOpenRound = rounds.find(r => r.id !== confirmCloseRound.id && !r.is_closed);
+        if (nextOpenRound) {
+          await db.setCurrentRound(nextOpenRound.id);
+          setCurrentRoundId(nextOpenRound.id);
+        }
+      }
+      
+      await load(); // Refresh rounds to show updated status
+      setActionMsg(`Round ${confirmCloseRound.round_number} ${wasClosing ? 'closed' : 'reopened'}.`);
+      setTimeout(() => setActionMsg(''), 4000);
+      onSeasonChanged?.(); // Trigger parent refresh
+    } catch (e) { setActionMsg('Error: ' + e.message); }
+    finally { setConfirmCloseRound(null); }
+  };
 
   return (
     <div>
@@ -477,6 +498,7 @@ const RoundsPanel = () => {
               {r.beer_hole && <span className="ml-2 text-rose-300">🍺 H{r.beer_hole}</span>}
               {r.joker_hole && <span className="ml-2 text-purple-300">🎭 H{r.joker_hole}</span>}
               {exCount > 0 && <span className="ml-2 text-amber-300">✕ {exCount} out</span>}
+              {r.is_closed && <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-red-500/20 text-red-400 rounded">CLOSED</span>}
             </p>
           </div>
           <div className="flex gap-2 items-center">
@@ -500,6 +522,14 @@ const RoundsPanel = () => {
               data-testid={`round-set-current-${r.id}`}
             >
               <Target size={16} weight={currentRoundId === r.id ? "fill" : "regular"} />
+            </button>
+            <button 
+              onClick={() => setConfirmCloseRound(r)} 
+              title={r.is_closed ? 'Reopen round for scoring' : 'Close round (prevent score changes)'}
+              className={`${r.is_closed ? 'text-red-400 hover:text-red-300' : 'text-emerald-400 hover:text-emerald-300'}`}
+              data-testid={`round-close-${r.id}`}
+            >
+              {r.is_closed ? <Lock size={16} weight="fill" /> : <LockOpen size={16} />}
             </button>
             <button onClick={() => openEdit(r)} className="text-[#A9C5B4] hover:text-[#D4AF37]" data-testid={`round-edit-${r.id}`}><PencilSimple size={16} /></button>
             <button onClick={() => setConfirmClear(r)} title="Clear scores for this round" className="text-[#A9C5B4] hover:text-amber-400" data-testid={`round-clear-${r.id}`}><Warning size={16} /></button>
@@ -597,6 +627,16 @@ const RoundsPanel = () => {
         onConfirm={doClear}
         onClose={() => setConfirmClear(null)}
       />
+      <ConfirmModal
+        open={!!confirmCloseRound}
+        title={confirmCloseRound?.is_closed ? 'Reopen round?' : 'Close round?'}
+        message={confirmCloseRound?.is_closed 
+          ? `Round ${confirmCloseRound?.round_number} will be reopened for scoring.` 
+          : `Round ${confirmCloseRound?.round_number} will be closed. No new scores can be added or changed.`}
+        confirmLabel={confirmCloseRound?.is_closed ? 'Reopen round' : 'Close round'}
+        onConfirm={doCloseRound}
+        onClose={() => setConfirmCloseRound(null)}
+      />
     </div>
   );
 };
@@ -693,12 +733,16 @@ const TeamsPanel = () => {
 };
 
 // ===== USERS =====
-const UsersPanel = ({ currentUserId }) => {
+const UsersPanel = ({ currentUserId, allPlayers }) => {
   const [users, setUsers] = useState([]);
   const [confirmRemove, setConfirmRemove] = useState(null);
   useEffect(() => { load(); }, []);
   const load = async () => { setUsers(await db.getAllUsers()); };
   const updateRole = async (userId, role) => { await db.updateUserRole(userId, role); await load(); };
+  const updatePlayerLink = async (userId, playerId) => { 
+    await db.updateUserPlayerLink(userId, playerId ? parseInt(playerId) : null); 
+    await load(); 
+  };
   const doRemove = async () => {
     if (!confirmRemove) return;
     try { await db.removeUser(confirmRemove.id); await load(); }
@@ -726,6 +770,17 @@ const UsersPanel = ({ currentUserId }) => {
               <option value="approved">Approved (edit access)</option>
               <option value="admin">Admin</option>
               <option value="rejected">Disabled</option>
+            </select>
+            <select 
+              value={u.player_id || ''} 
+              onChange={e => updatePlayerLink(u.id, e.target.value)} 
+              className="bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs rounded px-2 py-1 focus:outline-none flex-1 sm:flex-none"
+              title="Link to player"
+            >
+              <option value="">Not linked</option>
+              {allPlayers.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
             </select>
             {u.id !== currentUserId && (
               <button onClick={() => setConfirmRemove(u)} title="Remove user" className="text-[#A9C5B4] hover:text-red-400 flex-shrink-0" data-testid={`user-remove-${u.id}`}><Trash size={16} /></button>
@@ -1044,10 +1099,10 @@ const DangerPanel = () => {
       {msg && <div className={`mb-4 py-2 px-3 rounded-lg text-xs leading-relaxed ${msg.includes('Error') || msg.includes('Warning') ? 'bg-red-900/30 text-red-300 border border-red-500/30' : 'bg-emerald-900/30 text-emerald-300 border border-emerald-500/30'}`} data-testid="danger-msg">{msg}</div>}
       <div className="space-y-3">
         <button onClick={() => setConfirmClear(true)} disabled={busy} className="w-full py-3 rounded-lg border border-amber-500/40 text-amber-300 text-sm font-semibold hover:bg-amber-500/10 transition-colors disabled:opacity-40" data-testid="clear-all-scores">
-          {busy ? 'Working...' : 'Clear all scores (keep rounds & teams)'}
+          {busy ? 'Working...' : 'Clear all scores'}
         </button>
         <button onClick={() => setConfirmReset(true)} disabled={busy} className="w-full py-3 rounded-lg border border-red-500/40 text-red-400 text-sm font-semibold hover:bg-red-500/10 transition-colors disabled:opacity-40" data-testid="reset-season">
-          {busy ? 'Working...' : 'Reset entire season (remove rounds, holes, scores & teams)'}
+          {busy ? 'Working...' : 'Reset entire season'}
         </button>
       </div>
       <ConfirmModal
@@ -1071,7 +1126,7 @@ const DangerPanel = () => {
 };
 
 // ===== MAIN ADMIN PANEL =====
-export default function AdminPanel({ onSeasonChanged, currentUserId }) {
+export default function AdminPanel({ onSeasonChanged, currentUserId, allPlayers }) {
   const [tab, setTab] = useState('players');
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} data-testid="admin-panel">
@@ -1082,9 +1137,9 @@ export default function AdminPanel({ onSeasonChanged, currentUserId }) {
       <div className="max-w-2xl mx-auto rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md p-6 shadow-2xl">
         {tab === 'players' && <PlayersPanel />}
         {tab === 'courses' && <CoursesPanel />}
-        {tab === 'rounds' && <RoundsPanel />}
+        {tab === 'rounds' && <RoundsPanel onSeasonChanged={onSeasonChanged} />}
         {tab === 'teams' && <TeamsPanel />}
-        {tab === 'users' && <UsersPanel currentUserId={currentUserId} />}
+        {tab === 'users' && <UsersPanel currentUserId={currentUserId} allPlayers={allPlayers} />}
         {tab === 'season' && <SeasonPanel onSeasonChanged={onSeasonChanged} />}
         {tab === 'danger' && <DangerPanel />}
       </div>

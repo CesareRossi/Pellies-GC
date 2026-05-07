@@ -30,6 +30,7 @@ export default function SeasonWizard({ onComplete }) {
   const [rounds, setRounds] = useState([]);
   const [editingCourseHoles, setEditingCourseHoles] = useState(null); // course id
   const [courseHolesDraft, setCourseHolesDraft] = useState([]);
+  const [newRoundExcluded, setNewRoundExcluded] = useState(new Set()); // players excluded from new round
   const [teams, setTeams] = useState([]);
   const [newTeam, setNewTeam] = useState({ player1: '', player2: '' });
 
@@ -162,7 +163,9 @@ export default function SeasonWizard({ onComplete }) {
   };
 
   const updateCourseHole = (idx, field, value) => {
-    setCourseHolesDraft(prev => prev.map((h, i) => i === idx ? { ...h, [field]: parseInt(value) || 0 } : h));
+    // Allow empty string to stay blank, otherwise parse as integer
+    const parsedValue = value === '' ? '' : parseInt(value);
+    setCourseHolesDraft(prev => prev.map((h, i) => i === idx ? { ...h, [field]: parsedValue } : h));
   };
 
   const saveCourseHoles = async () => {
@@ -190,10 +193,25 @@ export default function SeasonWizard({ onComplete }) {
       const existingRounds = await db.getRounds();
       const nextNum = existingRounds.length > 0 ? Math.max(...existingRounds.map(r => r.round_number)) + 1 : 1;
       const r = await db.createRound({ round_number: nextNum, course_id: parseInt(courseId), is_setup: true });
+      
+      // Save exclusions for the new round
+      if (newRoundExcluded.size > 0 && r.id) {
+        await Promise.all([...newRoundExcluded].map(playerId => db.setPlayerExcluded(r.id, playerId, true)));
+      }
+      
       const fullRound = { ...r, courses: courses.find(c => c.id === parseInt(courseId)) };
       setRounds(prev => [...prev, fullRound]);
+      setNewRoundExcluded(new Set()); // Reset exclusions
     } catch (e) { setMsg(e.message); }
     finally { setSaving(false); }
+  };
+  
+  const toggleNewRoundExcluded = (playerId) => {
+    setNewRoundExcluded(prev => {
+      const next = new Set(prev);
+      if (next.has(playerId)) next.delete(playerId); else next.add(playerId);
+      return next;
+    });
   };
 
   const updateRoundSpecial = async (roundId, field, value) => {
@@ -255,15 +273,15 @@ export default function SeasonWizard({ onComplete }) {
 
   return (
     <>
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-3xl mx-auto">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-3xl mx-auto pb-20 lg:pb-0">
         {/* Progress */}
-        <div className="flex items-center justify-center gap-2 mb-8">
+        <div className="flex items-center justify-center gap-1 sm:gap-2 mb-6 sm:mb-8 overflow-x-auto px-2">
           {steps.map((s, i) => (
-            <div key={s} className="flex items-center gap-2">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${i <= step ? 'bg-[#D4AF37] text-[#051A10]' : 'bg-[#051A10] text-[#A9C5B4] border border-[#D4AF37]/20'}`}>
-                {i < step ? <Check size={14} weight="bold" /> : i + 1}
+            <div key={s} className="flex items-center gap-1 sm:gap-2 shrink-0">
+              <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold transition-all ${i <= step ? 'bg-[#D4AF37] text-[#051A10]' : 'bg-[#051A10] text-[#A9C5B4] border border-[#D4AF37]/20'}`}>
+                {i < step ? <Check size={12} className="sm:w-4 sm:h-4" weight="bold" /> : i + 1}
               </div>
-              {i < steps.length - 1 && <div className={`w-8 h-0.5 ${i < step ? 'bg-[#D4AF37]' : 'bg-[#D4AF37]/20'}`} />}
+              {i < steps.length - 1 && <div className={`w-4 sm:w-8 h-0.5 shrink-0 ${i < step ? 'bg-[#D4AF37]' : 'bg-[#D4AF37]/20'}`} />}
             </div>
           ))}
         </div>
@@ -377,8 +395,14 @@ export default function SeasonWizard({ onComplete }) {
                   <div key={c.id} className={`rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10 overflow-hidden ${!c.is_active ? 'opacity-50' : ''}`}>
                     <div className="flex items-center justify-between py-2 px-3 gap-2">
                       <div className="flex-1 min-w-0">
-                        <span className="text-white font-semibold text-sm">{c.name}</span>
-                        {!c.is_active && <span className="ml-2 text-[10px] uppercase tracking-wider text-amber-400">(disabled)</span>}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-white font-semibold text-sm">{c.name}</span>
+                          {!c.is_active && (
+                            <span className="text-[10px] uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded">
+                              Disabled
+                            </span>
+                          )}
+                        </div>
                         <p className="text-[#A9C5B4] text-xs">Par {c.par} &middot; Rating {c.rating} &middot; Slope {c.slope}</p>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
@@ -408,19 +432,21 @@ export default function SeasonWizard({ onComplete }) {
                                   <span className="text-[#D4AF37] text-sm font-bold text-center">{h.hole_number}</span>
                                   <input 
                                     type="number" 
-                                    value={h.par} 
+                                    value={h.par === '' || h.par == null ? '' : h.par} 
                                     onChange={e => updateCourseHole(i, 'par', e.target.value)} 
-                                    className="w-full px-2 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs text-center focus:outline-none focus:border-[#D4AF37]/50" 
+                                    className="w-full px-2 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs text-center focus:outline-none focus:border-[#D4AF37]/50 placeholder-[#A9C5B4]/30" 
                                     min="1" 
                                     max="6"
+                                    placeholder="Par"
                                   />
                                   <input 
                                     type="number" 
-                                    value={h.stroke_index} 
+                                    value={h.stroke_index === '' || h.stroke_index == null ? '' : h.stroke_index} 
                                     onChange={e => updateCourseHole(i, 'stroke_index', e.target.value)} 
-                                    className="w-full px-2 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs text-center focus:outline-none focus:border-[#D4AF37]/50" 
+                                    className="w-full px-2 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs text-center focus:outline-none focus:border-[#D4AF37]/50 placeholder-[#A9C5B4]/30" 
                                     min="1" 
                                     max="18"
+                                    placeholder="SI"
                                   />
                                 </div>
                               );
@@ -492,13 +518,34 @@ export default function SeasonWizard({ onComplete }) {
               </div>
               <div className="border-t border-[#D4AF37]/10 pt-4">
                 <p className="text-xs text-[#A9C5B4] mb-2">Add New Round</p>
-                <div className="flex gap-2">
+                <div className="flex gap-2 mb-3">
                   <select id="newRoundCourse" className="flex-1 px-3 py-2 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white text-sm focus:outline-none">
                     <option value="">Select course...</option>
                     {activeCourses.map(c => <option key={c.id} value={c.id}>{c.name} (Par {c.par})</option>)}
                   </select>
                   <button onClick={() => { const sel = document.getElementById('newRoundCourse'); addRound(sel.value); sel.value = ''; }} disabled={saving} className="px-4 py-2 bg-[#D4AF37] text-[#051A10] font-bold text-sm rounded-lg hover:bg-[#F1D67E] disabled:opacity-40"><Plus size={16} /></button>
                 </div>
+                
+                {/* Player Exclusions for New Round */}
+                <p className="text-[11px] text-[#A9C5B4]/70 italic mb-2">Tap players who didn't play this round (excluded from individual awards)</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-32 overflow-y-auto pr-1">
+                  {sortedPlayers.filter(p => p.is_active).map(p => {
+                    const isExcluded = newRoundExcluded.has(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => toggleNewRoundExcluded(p.id)}
+                        className={`text-left px-2.5 py-1.5 rounded-md border text-xs transition-colors ${isExcluded ? 'bg-amber-500/15 border-amber-500/40 text-amber-200' : 'bg-[#051A10]/60 border-[#D4AF37]/15 text-[#A9C5B4] hover:border-[#D4AF37]/30'}`}
+                      >
+                        {p.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                {newRoundExcluded.size > 0 && (
+                  <p className="text-[11px] text-amber-300 mt-2">{newRoundExcluded.size} player{newRoundExcluded.size === 1 ? '' : 's'} excluded from this round</p>
+                )}
               </div>
             </div>
           )}
@@ -569,13 +616,17 @@ export default function SeasonWizard({ onComplete }) {
                 {setupRounds.length > 0 && (
                   <div className="bg-[#051A10]/40 rounded-lg p-3 border border-[#D4AF37]/10">
                     <h4 className="text-sm font-semibold text-[#D4AF37] mb-2">🏌️ Rounds Configuration</h4>
-                    <div className="space-y-1 text-xs">
+                    <div className="space-y-2 text-xs">
                       {setupRounds.map(r => (
-                        <p key={r.id} className="text-[#A9C5B4]">
-                          Round {r.round_number}: {r.courses?.name}
-                          {r.joker_hole && <span className="text-purple-400 ml-2">🎭 Joker Hole {r.joker_hole}</span>}
-                          {r.beer_hole && <span className="text-amber-400 ml-2">🍺 Beer Hole {r.beer_hole}</span>}
-                        </p>
+                        <div key={r.id} className="text-[#A9C5B4] border-b border-[#D4AF37]/10 last:border-0 pb-2 last:pb-0">
+                          <p className="text-white font-medium">Round {r.round_number}: {r.courses?.name}</p>
+                          {(r.joker_hole || r.beer_hole) && (
+                            <div className="mt-1 space-y-0.5">
+                              {r.joker_hole && <p className="text-purple-400">🎭 Joker Hole {r.joker_hole}</p>}
+                              {r.beer_hole && <p className="text-amber-400">🍺 Beer Hole {r.beer_hole}</p>}
+                            </div>
+                          )}
+                        </div>
                       ))}
                     </div>
                   </div>

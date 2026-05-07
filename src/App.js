@@ -41,6 +41,7 @@ import SeasonRecapModal from './components/SeasonRecap';
 import GolfScorecard from './components/GolfScorecard';
 import TeamScorecard from './components/TeamScorecard';
 import LiveLeaderboard from './components/LiveLeaderboard';
+import QuickScoreDrawer from './components/QuickScoreDrawer';
 
 const REFRESH_INTERVAL = 5 * 60 * 1000;
 
@@ -301,36 +302,99 @@ const AuthModal = ({onSuccess, onClose}) => {
 };
 
 // ===== SCORE ENTRY =====
-const ScoreEntry = ({rounds, players, userId}) => {
+const ScoreEntry = ({rounds, players, userId, userPlayerId = null, currentRoundId = null}) => {
   const [selectedRound, setSelectedRound] = useState(null);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [holes, setHoles] = useState([]);
+  const [holesLoading, setHolesLoading] = useState(false);
   const [scores, setScores] = useState({});
+  const [selectedHole, setSelectedHole] = useState(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
   const [excludedPlayers, setExcludedPlayers] = useState(new Set());
+  const hasSetDefaults = useRef(false);
 
-  useEffect(() => { if(rounds.length>0&&!selectedRound) setSelectedRound(rounds[0].id); }, [rounds, selectedRound]);
+  // Get live round (is_current flag or currentRoundId match)
+  const liveRound = useMemo(() => {
+    // Priority: 1) Round with is_current flag, 2) Round matching currentRoundId, 3) First open round
+    return rounds.find(r => r.is_current) || 
+           rounds.find(r => r.id === parseInt(currentRoundId)) ||
+           rounds.find(r => !r.is_closed);
+  }, [rounds, currentRoundId]);
+
+  // Set round default once when component mounts with data
+  useEffect(() => {
+    if (hasSetDefaults.current) return;
+    if (rounds.length === 0) return;
+    
+    hasSetDefaults.current = true;
+    
+    // Set round default priority: 1) Live round if open, 2) First open round
+    let defaultRound = null;
+    if (liveRound && !liveRound.is_closed) {
+      defaultRound = liveRound.id;
+    } else {
+      const openRounds = rounds.filter(r => !r.is_closed);
+      defaultRound = openRounds[0]?.id || rounds[0]?.id;
+    }
+    if (defaultRound) setSelectedRound(defaultRound);
+  }, [rounds, liveRound]);
+  
+  // Set player default whenever userPlayerId becomes available
+  useEffect(() => {
+    if (!userPlayerId) return;
+    if (players.length === 0) return;
+    if (selectedPlayer) return; // Don't override if already selected
+    
+    const linkedPlayer = players.find(p => p.id === userPlayerId);
+    if (linkedPlayer) {
+      setSelectedPlayer(userPlayerId);
+    }
+  }, [userPlayerId, players, selectedPlayer]);
 
   useEffect(() => {
     if(!selectedRound) return;
-    setHoles([]); // Clear holes while loading
-    setExcludedPlayers(new Set()); // Clear exclusions while loading
-    db.getHolesForRound(selectedRound).then(setHoles).catch(()=>setHoles([]));
-    db.getRoundExclusions(selectedRound).then(ids=>setExcludedPlayers(new Set(ids))).catch(()=>setExcludedPlayers(new Set()));
-    setSelectedPlayer(null); setScores({});
+    setHolesLoading(true);
+    setHoles([]);
+    setExcludedPlayers(new Set());
+    
+    Promise.all([
+      db.getHolesForRound(selectedRound),
+      db.getRoundExclusions(selectedRound)
+    ]).then(([holesData, exclusionIds]) => {
+      setHoles(holesData || []);
+      setExcludedPlayers(new Set(exclusionIds || []));
+    }).catch(() => {
+      setHoles([]);
+    }).finally(() => {
+      setHolesLoading(false);
+    });
+    
+    // Only reset player/scores when round actually changes (not initial mount)
+    if (hasSetDefaults.current) {
+      setSelectedPlayer(null);
+    }
+    setSelectedHole(null);
+    setScores({});
   }, [selectedRound]);
 
   useEffect(() => {
-    if(!selectedRound||!selectedPlayer) { setScores({}); return; }
+    if(!selectedRound||!selectedPlayer) { setScores({}); setSelectedHole(null); return; }
+    setScores({}); // Clear while loading
     db.getScoresForRound(selectedRound).then(data => {
       const ps = {};
       data.filter(s=>s.player_id===parseInt(selectedPlayer)).forEach(s=>{ ps[s.hole_number]=s.strokes; });
       setScores(ps);
-    });
+    }).catch(() => setScores({}));
   }, [selectedRound, selectedPlayer]);
 
   const updateScore = (hole, val) => { const n=val===''?'':parseInt(val); if(val!==''&&(isNaN(n)||n<0||n>20))return; setScores(p=>({...p,[hole]:n})); };
+  const adjustScore = (hole, delta, par) => {
+    const current = scores[hole];
+    const base = current != null && current !== '' ? parseInt(current) : par || 4;
+    const newVal = Math.max(1, Math.min(15, base + delta));
+    setScores(p => ({...p, [hole]: newVal}));
+  };
   const totalScore = Object.values(scores).reduce((a,b)=>(typeof b==='number'?a+b:a),0);
   const totalPar = holes.reduce((a,h)=>a+h.par,0);
   const filled = Object.values(scores).filter(v=>typeof v==='number'&&v>0).length;
@@ -357,7 +421,7 @@ const ScoreEntry = ({rounds, players, userId}) => {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 max-w-2xl mx-auto">
         <div><label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Round</label>
           <select value={selectedRound||''} onChange={e=>setSelectedRound(e.target.value)} className="w-full px-4 py-3 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white focus:outline-none text-sm">
-            {rounds.map(r=><option key={r.id} value={r.id}>{r.courses?.name} (Round {r.round_number})</option>)}
+            {rounds.filter(r => !r.is_closed).map(r=><option key={r.id} value={r.id}>{r.courses?.name} (Round {r.round_number})</option>)}
           </select></div>
         <div><label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Player</label>
           <select value={selectedPlayer||''} onChange={e=>setSelectedPlayer(e.target.value)} className="w-full px-4 py-3 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white focus:outline-none text-sm">
@@ -371,78 +435,186 @@ const ScoreEntry = ({rounds, players, userId}) => {
         <span>Rating: <strong className="text-white">{rd.courses?.rating}</strong></span>
         <span>Slope: <strong className="text-white">{rd.courses?.slope}</strong></span>
       </div>}
-      {selectedPlayer&&holes.length===0&&(
-        <div className="max-w-2xl mx-auto rounded-xl border border-amber-500/30 bg-amber-900/20 p-5 text-center">
-          <p className="text-amber-300 text-sm font-semibold mb-1">No holes configured for this course yet</p>
-          <p className="text-[#A9C5B4] text-xs">Ask an admin to set par &amp; stroke-index in <strong>Admin → Courses → Holes</strong> for {rd?.courses?.name || 'this course'}.</p>
+      {rd?.is_closed && (
+        <div className="max-w-2xl mx-auto rounded-xl border border-red-500/30 bg-red-900/20 p-5 text-center mb-6">
+          <p className="text-red-300 text-sm font-semibold mb-1">Round Closed</p>
+          <p className="text-[#A9C5B4] text-xs">This round has been closed. No new scores can be added or changed.</p>
         </div>
       )}
-      {selectedPlayer&&holes.length>0&&(
+      {selectedPlayer&&!rd?.is_closed&&(
         <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 overflow-hidden shadow-2xl max-w-3xl mx-auto">
           <div className="p-4 border-b border-[#D4AF37]/10 flex items-center justify-between">
             <h3 className="text-sm text-white"><span className="text-[#D4AF37] font-bold">{players.find(p=>p.id===parseInt(selectedPlayer))?.name}</span></h3>
             <div className="text-xs text-[#A9C5B4]">{filled}/{holes.length} holes &middot; Total: <span className={`font-bold ${totalScore-totalPar<0?'text-emerald-400':totalScore-totalPar>0?'text-orange-400':'text-white'}`}>{totalScore||'-'}</span>{totalScore>0&&<span className="ml-1">({totalScore-totalPar>=0?'+':''}{totalScore-totalPar})</span>}</div>
           </div>
-          {/* Mobile: stepper layout — 2 holes per row with big +/- buttons */}
-          <div className="sm:hidden p-3 space-y-2">
-            {[{label:'Front 9',slice:[0,9]},{label:'Back 9',slice:[9,18]}].map(({label,slice})=>(
-              <div key={label}>
-                <p className="text-[11px] text-[#A9C5B4] uppercase tracking-wider mt-3 mb-2 px-1">{label}</p>
-                {holes.slice(...slice).map(h=>{
+          
+          {/* Hole Selector Grid */}
+          {holesLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="w-10 h-10 border-2 border-[#D4AF37]/30 border-t-[#D4AF37] rounded-full animate-spin" />
+            </div>
+          ) : holes.length === 0 ? (
+            <div className="p-8 text-center">
+              <p className="text-[#A9C5B4] text-sm">No holes configured for this course</p>
+            </div>
+          ) : (
+          <>
+          <div className="p-4">
+            {[{label:'Front 9',slice:[0,9]},{label:'Back 9',slice:[9,18]}].map(({label,slice})=>{
+              const sectionHoles = holes.slice(...slice);
+              if (sectionHoles.length === 0) return null;
+              return (
+                <div key={label} className="mb-4">
+                  <p className="text-xs text-[#A9C5B4] uppercase tracking-wider mb-2">{label}</p>
+                  <div className="grid grid-cols-9 gap-2">
+                    {sectionHoles.map(h => {
+                      const v = scores[h.hole_number];
+                      const hasV = v != null && v !== '';
+                      const isSelected = selectedHole === h.hole_number;
+                      const diff = hasV ? v - h.par : 0;
+                      const baseTone = !hasV
+                        ? 'bg-[#051A10] border-[#D4AF37]/20 text-white'
+                        : diff < 0
+                          ? 'bg-emerald-900/40 border-emerald-500/40 text-emerald-300'
+                          : diff === 0
+                            ? 'bg-[#051A10] border-[#D4AF37]/40 text-white'
+                            : 'bg-orange-900/30 border-orange-500/40 text-orange-300';
+                      return (
+                        <button
+                          key={h.hole_number}
+                          onClick={() => setSelectedHole(h.hole_number)}
+                          className={`aspect-square rounded-lg border text-sm font-bold transition-all relative ${
+                            isSelected 
+                              ? 'ring-2 ring-[#D4AF37] ring-offset-1 ring-offset-[#0F2C1D] ' + baseTone
+                              : baseTone + ' hover:border-[#D4AF37]/50'
+                          }`}
+                          title={`Par ${h.par}, SI ${h.stroke_index}`}
+                        >
+                          <span className="block text-xs opacity-70">{h.hole_number}</span>
+                          <span className="block text-sm">{hasV ? v : '−'}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Selected Hole Score Input */}
+          {selectedHole && (
+            <div className="px-4 pb-4">
+              <div className="bg-[#051A10]/50 rounded-xl p-4 border border-[#D4AF37]/20">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm text-[#A9C5B4]">Hole {selectedHole}</span>
+                  <span className="text-xs text-[#A9C5B4]">Par {holes.find(h => h.hole_number === selectedHole)?.par} • SI {holes.find(h => h.hole_number === selectedHole)?.stroke_index}</span>
+                </div>
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => adjustScore(selectedHole, -1, holes.find(h => h.hole_number === selectedHole)?.par)}
+                    className="w-14 h-14 rounded-xl bg-[#051A10] border border-[#D4AF37]/30 text-[#D4AF37] text-2xl font-bold active:bg-[#D4AF37]/20 flex items-center justify-center"
+                    disabled={scores[selectedHole] != null && scores[selectedHole] !== '' && scores[selectedHole] <= 1}
+                  >
+                    −
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const h = holes.find(hh => hh.hole_number === selectedHole);
+                      const v = scores[selectedHole];
+                      const hasV = v != null && v !== '';
+                      updateScore(selectedHole, hasV ? v : h?.par || 4);
+                    }}
+                    className={`w-20 h-14 rounded-xl border text-2xl font-bold ${
+                      (() => {
+                        const h = holes.find(hh => hh.hole_number === selectedHole);
+                        const v = scores[selectedHole];
+                        const hasV = v != null && v !== '';
+                        if (!hasV) return 'bg-[#051A10] border-[#D4AF37]/30 text-white';
+                        const diff = v - h.par;
+                        if (diff < 0) return 'bg-emerald-900/40 border-emerald-500/40 text-emerald-300';
+                        if (diff === 0) return 'bg-[#051A10] border-[#D4AF37]/40 text-white';
+                        return 'bg-orange-900/30 border-orange-500/40 text-orange-300';
+                      })()
+                    }`}
+                  >
+                    {(() => {
+                      const v = scores[selectedHole];
+                      const hasV = v != null && v !== '';
+                      return hasV ? v : '−';
+                    })()}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => adjustScore(selectedHole, 1, holes.find(h => h.hole_number === selectedHole)?.par)}
+                    className="w-14 h-14 rounded-xl bg-[#051A10] border border-[#D4AF37]/30 text-[#D4AF37] text-2xl font-bold active:bg-[#D4AF37]/20 flex items-center justify-center"
+                  >
+                    +
+                  </button>
+                </div>
+                {/* Quick set buttons */}
+                <div className="flex justify-center gap-2 mt-3">
+                  {[1,2,3,4,5,6,7,8].map(n => (
+                    <button
+                      key={n}
+                      onClick={() => updateScore(selectedHole, n)}
+                      className={`w-8 h-8 rounded-lg text-sm font-bold border transition-colors ${
+                        scores[selectedHole] === n 
+                          ? 'bg-[#D4AF37] text-[#051A10] border-[#D4AF37]' 
+                          : 'bg-[#051A10] text-white border-[#D4AF37]/20 hover:border-[#D4AF37]/50'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+            <div className="p-4 border-t border-[#D4AF37]/10 flex items-center justify-between gap-3">
+              {msg&&<p className={`text-xs flex-1 ${msg.includes('Error')?'text-red-400':'text-emerald-400'}`}>{msg}</p>}
+              <button onClick={handleSave} disabled={saving||filled===0} className="flex items-center gap-2 px-6 py-2.5 bg-[#D4AF37] text-[#051A10] font-bold text-sm rounded-lg hover:bg-[#F1D67E] transition-colors disabled:opacity-40 ml-auto" data-testid="save-scores-btn">
+                <CloudArrowUp size={16} weight="bold"/> {saving?'Saving...':'Save Scores'}
+              </button>
+            </div>
+          </>
+          )}
+        </div>
+      )}
+      {/* Read-only view for closed rounds - show existing scores */}
+      {selectedPlayer&&rd?.is_closed&&(
+        <div className="rounded-xl border border-red-500/20 bg-[#0F2C1D]/90 overflow-hidden shadow-2xl max-w-3xl mx-auto">
+          <div className="p-4 border-b border-red-500/10 flex items-center justify-between bg-red-900/10">
+            <h3 className="text-sm text-white"><span className="text-[#D4AF37] font-bold">{players.find(p=>p.id===parseInt(selectedPlayer))?.name}</span></h3>
+            <span className="px-2 py-1 text-[10px] bg-red-500/20 text-red-400 rounded border border-red-500/30">Round Closed - View Only</span>
+          </div>
+          <div className="p-4">
+            {holes.length>0 ? (
+              <div className="grid grid-cols-9 gap-3">
+                {holes.map(h=>{
                   const v = scores[h.hole_number];
                   const hasV = v!=null&&v!=='';
                   const diff = hasV ? v - h.par : 0;
-                  const tone = !hasV ? 'bg-[#051A10] border-[#D4AF37]/15 text-white' : diff<0 ? 'bg-emerald-900/40 border-emerald-500/40 text-emerald-300' : diff===0 ? 'bg-[#051A10] border-[#D4AF37]/30 text-white' : 'bg-orange-900/30 border-orange-500/40 text-orange-300';
+                  const tone = !hasV ? 'bg-[#051A10]/50 border-[#D4AF37]/10 text-[#A9C5B4]' : diff<0 ? 'bg-emerald-900/30 border-emerald-500/30 text-emerald-300' : diff===0 ? 'bg-[#051A10] border-[#D4AF37]/20 text-white' : 'bg-orange-900/20 border-orange-500/30 text-orange-300';
                   return (
-                    <div key={h.hole_number} className="flex items-center gap-2 py-1">
-                      <div className="flex-1 flex items-center gap-2">
-                        <span className="text-sm font-bold text-[#D4AF37] w-10">H{h.hole_number}</span>
-                        <span className="text-[11px] text-[#A9C5B4]">Par {h.par}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={()=>updateScore(h.hole_number, Math.max(1, (parseInt(v)||h.par)-1))}
-                        className="w-11 h-11 rounded-lg bg-[#051A10] border border-[#D4AF37]/30 text-[#D4AF37] text-xl font-bold active:bg-[#D4AF37]/20 disabled:opacity-40 flex items-center justify-center"
-                        disabled={hasV && v<=1}
-                        aria-label={`Decrement hole ${h.hole_number}`}
-                        data-testid={`hole-${h.hole_number}-minus`}
-                      >−</button>
-                      <button
-                        type="button"
-                        onClick={()=>updateScore(h.hole_number, hasV ? v : h.par)}
-                        className={`w-14 h-11 rounded-lg border text-lg font-bold ${tone}`}
-                        data-testid={`hole-${h.hole_number}-value`}
-                      >
+                    <div key={h.hole_number} className="text-center">
+                      <div className="text-[10px] text-[#A9C5B4] mb-1">H{h.hole_number}</div>
+                      <div className="text-[10px] text-[#D4AF37]/60 mb-1">P{h.par}</div>
+                      <div className={`w-full h-10 flex items-center justify-center rounded-lg border text-sm font-bold ${tone}`}>
                         {hasV ? v : '-'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={()=>updateScore(h.hole_number, Math.min(15, (parseInt(v)||h.par)+1))}
-                        className="w-11 h-11 rounded-lg bg-[#051A10] border border-[#D4AF37]/30 text-[#D4AF37] text-xl font-bold active:bg-[#D4AF37]/20 flex items-center justify-center"
-                        aria-label={`Increment hole ${h.hole_number}`}
-                        data-testid={`hole-${h.hole_number}-plus`}
-                      >+</button>
+                      </div>
                     </div>
                   );
                 })}
               </div>
-            ))}
+            ) : (
+              <p className="text-center text-[#A9C5B4] text-sm py-4">No hole data available</p>
+            )}
           </div>
-          {/* Desktop/tablet: keyboard-friendly grid */}
-          <div className="hidden sm:block">
-            {[{label:'Front 9',slice:[0,9]},{label:'Back 9',slice:[9,18]}].map(({label,slice})=>(
-              <div key={label} className="p-4"><p className="text-xs text-[#A9C5B4] uppercase tracking-wider mb-3">{label}</p><div className="grid grid-cols-9 gap-2">
-                {holes.slice(...slice).map(h=>(<div key={h.hole_number} className="text-center"><div className="text-[10px] text-[#A9C5B4] mb-1">H{h.hole_number}</div><div className="text-[10px] text-[#D4AF37]/60 mb-1">P{h.par}</div>
-                  <input type="number" inputMode="numeric" min="1" max="15" value={scores[h.hole_number]??''} onChange={e=>updateScore(h.hole_number,e.target.value)} className={`w-full h-10 text-center rounded-lg border text-sm font-bold focus:outline-none focus:ring-1 focus:ring-[#D4AF37] ${scores[h.hole_number]!=null&&scores[h.hole_number]!==''?scores[h.hole_number]<h.par?'bg-emerald-900/40 border-emerald-500/40 text-emerald-300':scores[h.hole_number]===h.par?'bg-[#051A10] border-[#D4AF37]/30 text-white':'bg-orange-900/30 border-orange-500/40 text-orange-300':'bg-[#051A10] border-[#D4AF37]/15 text-white'}`}/>
-                </div>))}
-              </div></div>
-            ))}
-          </div>
-          <div className="p-4 border-t border-[#D4AF37]/10 flex items-center justify-between gap-3">
-            {msg&&<p className={`text-xs flex-1 ${msg.includes('Error')?'text-red-400':'text-emerald-400'}`}>{msg}</p>}
-            <button onClick={handleSave} disabled={saving||filled===0} className="flex items-center gap-2 px-6 py-2.5 bg-[#D4AF37] text-[#051A10] font-bold text-sm rounded-lg hover:bg-[#F1D67E] transition-colors disabled:opacity-40 ml-auto" data-testid="save-scores-btn">
-              <CloudArrowUp size={16} weight="bold"/> {saving?'Saving...':'Save Scores'}
-            </button>
+          <div className="p-4 border-t border-red-500/10 bg-red-900/5">
+            <p className="text-center text-xs text-[#A9C5B4]">Scores cannot be edited because this round is closed.</p>
           </div>
         </div>
       )}
@@ -477,6 +649,7 @@ function App() {
     const saved = localStorage.getItem('leaderboardMode');
     return saved === 'stroke' || saved === 'stableford' ? saved : 'stableford';
   }); // 'stableford' | 'stroke'
+  const [quickScoreOpen, setQuickScoreOpen] = useState(false);
   const [rounds, setRounds] = useState([]);
   const [players, setPlayers] = useState([]);
   const [currentSeason, setCurrentSeason] = useState(null);
@@ -510,6 +683,8 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  const [roundsVersion, setRoundsVersion] = useState(0);
+  
   const loadData = useCallback(async () => {
     try {
       const [r, p, cs, arch] = await Promise.all([
@@ -521,6 +696,7 @@ function App() {
       setRounds(r); setPlayers(p);
       setCurrentSeason(cs);
       setArchivedSeasons(arch || []);
+      setRoundsVersion(v => v + 1); // Trigger refresh in score components
     } catch(err) { console.error(err); }
   }, []);
 
@@ -680,7 +856,18 @@ function App() {
       );
     }
     if (view === 'overview' && overview) return <Overview data={overview} onNav={navigate} archivedSeasons={archivedSeasons} onShareRecap={setRecapSeason}/>;
-    if (view === 'stats' && playerStats) {
+    if (view === 'stats') {
+      if (!playerStats || playerStats.length === 0) {
+        return (
+          <motion.div key="stats" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="min-h-[60vh] flex items-center justify-center">
+            <div className="text-center">
+              <Flag size={48} className="text-[#D4AF37]/50 mx-auto mb-4" />
+              <h3 className="text-xl font-sans text-[#D4AF37] mb-2">No Stats Yet</h3>
+              <p className="text-[#A9C5B4] text-sm max-w-xs mx-auto">No players have started scoring rounds yet. Stats will appear once rounds are completed.</p>
+            </div>
+          </motion.div>
+        );
+      }
       return (
         <motion.div key="stats" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -746,9 +933,9 @@ function App() {
         </motion.div>
       );
     }
-    if (view === 'score_entry' && canScore) return <ScoreEntry rounds={rounds} players={players} userId={user?.id}/>;
+    if (view === 'score_entry' && canScore) return <ScoreEntry key={`score-entry-${roundsVersion}`} rounds={rounds} players={players} userId={user?.id} userPlayerId={profile?.player_id} currentRoundId={viewParam || currentSeason?.current_round_id} roundsVersion={roundsVersion}/>;
     if (view === 'season_wizard') return <SeasonWizard onComplete={()=>{ loadData(); navigate('overview'); }}/>;
-    if (view === 'admin') return <AdminPanel onSeasonChanged={loadData} currentUserId={user?.id}/>;
+    if (view === 'admin') return <AdminPanel onSeasonChanged={loadData} currentUserId={user?.id} allPlayers={players}/>;
     return null;
   };
 
@@ -867,6 +1054,29 @@ function App() {
             {renderContent()}
           </AnimatePresence>
         </main>
+
+        {/* Quick Score FAB - Only visible on mobile/tablet when user can score */}
+        {user && (
+          <button
+            onClick={() => setQuickScoreOpen(true)}
+            className="lg:hidden fixed bottom-6 right-6 z-50 w-14 h-14 bg-[#D4AF37] text-[#051A10] rounded-full shadow-2xl flex items-center justify-center hover:bg-[#F1D67E] active:scale-95 transition-all"
+            title="Quick Score"
+          >
+            <Golf size={28} weight="fill" />
+          </button>
+        )}
+
+        {/* Quick Score Drawer */}
+        <QuickScoreDrawer
+          isOpen={quickScoreOpen}
+          onClose={() => setQuickScoreOpen(false)}
+          rounds={rounds}
+          players={players}
+          userId={user?.id}
+          userPlayerId={profile?.player_id}
+          currentRoundId={viewParam || currentSeason?.current_round_id}
+          roundsVersion={roundsVersion}
+        />
       </div>
       <AnimatePresence>
         {showAuth&&<AuthModal onSuccess={()=>setShowAuth(false)} onClose={()=>setShowAuth(false)}/>}

@@ -51,11 +51,11 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode }) => {
     loadData();
   }, [loadData]);
 
-  // Auto-refresh every 30 seconds during live tracking
+  // Auto-refresh every 2 minutes during live tracking
   useEffect(() => {
     const interval = setInterval(() => {
       loadData();
-    }, 30000);
+    }, 120000);
     return () => clearInterval(interval);
   }, [loadData]);
 
@@ -193,7 +193,7 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode }) => {
               data.display_name
             )}
             <span className="mx-1">•</span>
-            Auto-updates every 30s
+            Auto-updates every 120s
           </p>
         </div>
       </div>
@@ -278,31 +278,6 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode }) => {
             </motion.div>
           ))}
         </div>
-      </div>
-
-      {/* Footer Stats */}
-      <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard 
-          icon={<Users size={20} weight="duotone" />}
-          label="Players"
-          value={players.length}
-        />
-        <StatCard 
-          icon={<Flag size={20} weight="duotone" />}
-          label="Holes"
-          value="18"
-        />
-        <StatCard 
-          icon={<Target size={20} weight="duotone" />}
-          label="Completed"
-          value={`${players.filter(p => p.thru === 18).length}/${players.length}`}
-        />
-        <StatCard 
-          icon={<TrendUp size={20} weight="duotone" />}
-          label="Leader"
-          value={players[0]?.total || 0}
-          sub={mode === 'stableford' ? 'pts' : 'str'}
-        />
       </div>
 
       {/* Last Updated */}
