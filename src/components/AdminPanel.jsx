@@ -755,26 +755,24 @@ const UsersPanel = ({ currentUserId, allPlayers }) => {
       <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider mb-2">Users ({users.length})</h3>
       <p className="text-xs text-[#A9C5B4]/60 mb-5 italic">Note: newly registered users appear here after their first login. If a user doesn't show up, ask them to log in once.</p>
       <div className="space-y-2">{users.map(u => (
-        <div key={u.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-3 px-4 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10 gap-3" data-testid={`user-row-${u.id}`}>
-          <div className="flex items-center gap-3 min-w-0">
-            <UserCircle size={28} className="text-[#A9C5B4] flex-shrink-0" />
-            <div className="min-w-0">
-              <p className="text-white text-sm font-semibold truncate">{u.display_name || u.email?.split('@')[0]}</p>
-              <p className="text-[#A9C5B4] text-xs truncate">{u.email}</p>
-            </div>
+        <div key={u.id} className="flex items-center gap-3 py-2.5 px-4 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10" data-testid={`user-row-${u.id}`}>
+          <UserCircle size={28} className="text-[#A9C5B4] flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-white text-sm font-semibold truncate">{u.display_name || u.email?.split('@')[0]}</p>
+            <p className="text-[#A9C5B4] text-xs break-all">{u.email}</p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <span className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${rb(u.role)}`}>{ri(u.role)} {u.role}</span>
-            <select value={u.role} onChange={e => updateRole(u.id, e.target.value)} className="bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs rounded px-2 py-1 focus:outline-none flex-1 sm:flex-none" data-testid={`user-role-${u.id}`}>
-              <option value="pending">Pending (view only)</option>
-              <option value="approved">Approved (edit access)</option>
+            <select value={u.role} onChange={e => updateRole(u.id, e.target.value)} className="bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs rounded px-2 py-1 focus:outline-none min-w-[100px]" data-testid={`user-role-${u.id}`}>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
               <option value="admin">Admin</option>
               <option value="rejected">Disabled</option>
             </select>
             <select 
               value={u.player_id || ''} 
               onChange={e => updatePlayerLink(u.id, e.target.value)} 
-              className="bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs rounded px-2 py-1 focus:outline-none flex-1 sm:flex-none"
+              className="bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs rounded px-2 py-1 focus:outline-none min-w-[80px]"
               title="Link to player"
             >
               <option value="">Not linked</option>
