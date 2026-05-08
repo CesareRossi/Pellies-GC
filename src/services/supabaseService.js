@@ -433,9 +433,21 @@ export async function upsertScores(scores) {
     if (round?.is_closed) throw new Error('This round is closed. No scores can be added or changed.');
   }
   
-  const { data, error } = await supabase.from('scores').upsert(scores, { onConflict: 'round_id,player_id,hole_number' }).select();
-  if (error) throw error;
-  return data;
+  try {
+    const { data, error } = await withTimeout(
+      supabase.from('scores').upsert(scores, { onConflict: 'round_id,player_id,hole_number' }).select(),
+      15000,
+      'upsertScores'
+    );
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    // Handle lock conflict specifically
+    if (err?.message?.includes('Lock broken') || err?.message?.includes('steal')) {
+      throw new Error('Another save is in progress. Please wait a moment and try again.');
+    }
+    throw err;
+  }
 }
 
 // ===== TEAMS =====

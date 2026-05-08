@@ -996,33 +996,35 @@ function App() {
                   {teamItems.length>0&&<NavDropdown label="Teams Round" icon={<UsersThree size={17} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-teams"/>}
                 </div>
                 <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-[#D4AF37]/20">
-                  {/* Mode Toggle - Desktop */}
-                  <div className="flex bg-[#051A10] rounded-lg p-0.5 border border-[#D4AF37]/20">
-                    <button
-                      onClick={() => setLeaderboardMode('stableford')}
-                      className={`px-2 py-1 text-xs rounded-md transition-all ${
-                        leaderboardMode === 'stableford'
-                          ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                          : 'text-[#A9C5B4] hover:text-white'
-                      }`}
-                      title="Stableford scoring"
-                    >
-                      <span className="hidden xl:inline">Stableford</span>
-                      <span className="xl:hidden">SF</span>
-                    </button>
-                    <button
-                      onClick={() => setLeaderboardMode('stroke')}
-                      className={`px-2 py-1 text-xs rounded-md transition-all ${
-                        leaderboardMode === 'stroke'
-                          ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                          : 'text-[#A9C5B4] hover:text-white'
-                      }`}
-                      title="Stroke play scoring"
-                    >
-                      <span className="hidden xl:inline">Stroke</span>
-                      <span className="xl:hidden">ST</span>
-                    </button>
-                  </div>
+                  {/* Mode Toggle - Desktop - only show on views that use it */}
+                  {['league_lb', 'team_lb', 'stableford', 'teams', 'live'].includes(view) && (
+                    <div className="flex bg-[#051A10] rounded-lg p-0.5 border border-[#D4AF37]/20">
+                      <button
+                        onClick={() => setLeaderboardMode('stableford')}
+                        className={`px-2 py-1 text-xs rounded-md transition-all ${
+                          leaderboardMode === 'stableford'
+                            ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                            : 'text-[#A9C5B4] hover:text-white'
+                        }`}
+                        title="Stableford scoring"
+                      >
+                        <span className="hidden xl:inline">Stableford</span>
+                        <span className="xl:hidden">SF</span>
+                      </button>
+                      <button
+                        onClick={() => setLeaderboardMode('stroke')}
+                        className={`px-2 py-1 text-xs rounded-md transition-all ${
+                          leaderboardMode === 'stroke'
+                            ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                            : 'text-[#A9C5B4] hover:text-white'
+                        }`}
+                        title="Stroke play scoring"
+                      >
+                        <span className="hidden xl:inline">Stroke</span>
+                        <span className="xl:hidden">ST</span>
+                      </button>
+                    </div>
+                  )}
                   {quickMenuItems.length>0&&<NavDropdown label="Manage" icon={<Gear size={15} weight="duotone"/>} items={quickMenuItems} activeId={quickMenuActiveViews.has(view)?view:null} onSelect={id=>navigate(id)} testId="nav-menu"/>}
                 </div>
               </div>
@@ -1033,31 +1035,33 @@ function App() {
                   {stabItems.length>0&&<NavDropdown label="Individual" icon={<ChartLine size={16} weight="duotone"/>} items={stabItems} activeId={view==='stableford'?viewParam:null} onSelect={id=>navigate('stableford',id)} testId="nav-mobile-stab"/>}
                   {teamItems.length>0&&<NavDropdown label="Teams" icon={<UsersThree size={16} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-mobile-teams"/>}
                 </div>
-                {/* Mode Toggle - Mobile */}
-                <div className="mt-2 pt-2 border-t border-[#D4AF37]/20 flex justify-center">
-                  <div className="flex bg-[#051A10] rounded-lg p-0.5 border border-[#D4AF37]/20">
-                    <button
-                      onClick={() => setLeaderboardMode('stableford')}
-                      className={`px-4 py-1.5 text-xs rounded-md transition-all ${
-                        leaderboardMode === 'stableford'
-                          ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                          : 'text-[#A9C5B4] hover:text-white'
-                      }`}
-                    >
-                      Stableford
-                    </button>
-                    <button
-                      onClick={() => setLeaderboardMode('stroke')}
-                      className={`px-4 py-1.5 text-xs rounded-md transition-all ${
-                        leaderboardMode === 'stroke'
-                          ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
-                          : 'text-[#A9C5B4] hover:text-white'
-                      }`}
-                    >
-                      Stroke
-                    </button>
+                {/* Mode Toggle - Mobile - only show on views that use it */}
+                {['league_lb', 'team_lb', 'stableford', 'teams', 'live'].includes(view) && (
+                  <div className="mt-2 pt-2 border-t border-[#D4AF37]/20 flex justify-center">
+                    <div className="flex bg-[#051A10] rounded-lg p-0.5 border border-[#D4AF37]/20">
+                      <button
+                        onClick={() => setLeaderboardMode('stableford')}
+                        className={`px-4 py-1.5 text-xs rounded-md transition-all ${
+                          leaderboardMode === 'stableford'
+                            ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                            : 'text-[#A9C5B4] hover:text-white'
+                        }`}
+                      >
+                        Stableford
+                      </button>
+                      <button
+                        onClick={() => setLeaderboardMode('stroke')}
+                        className={`px-4 py-1.5 text-xs rounded-md transition-all ${
+                          leaderboardMode === 'stroke'
+                            ? 'bg-[#D4AF37] text-[#051A10] font-semibold'
+                            : 'text-[#A9C5B4] hover:text-white'
+                        }`}
+                      >
+                        Stroke
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </nav>
           </div>
