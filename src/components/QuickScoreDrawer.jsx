@@ -393,22 +393,24 @@ const QuickScoreDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
                 </div>
               )}
 
-              {/* Submit button */}
+              {/* Submit button - sticky at bottom */}
               {selectedPlayer && holes.length > 0 && !roundClosed && (
-                <button
-                  onClick={handleSubmit}
-                  disabled={saving || Object.keys(scores).filter(k => scores[k] !== '' && scores[k] != null).length === 0}
-                  className="w-full py-4 bg-[#D4AF37] text-[#051A10] font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
-                >
-                  {saving ? (
-                    <span>Saving...</span>
-                  ) : (
-                    <>
-                      <CloudArrowUp size={20} weight="bold" />
-                      Save Scores
-                    </>
-                  )}
-                </button>
+                <div className="sticky bottom-0 left-0 right-0 bg-[#0F2C1D]/95 backdrop-blur-sm pt-3 pb-4 px-4 -mx-4 border-t border-[#D4AF37]/20 z-10">
+                  <button
+                    onClick={handleSubmit}
+                    disabled={saving || Object.keys(scores).filter(k => scores[k] !== '' && scores[k] != null).length === 0}
+                    className="w-full py-4 bg-[#D4AF37] text-[#051A10] font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform shadow-lg"
+                  >
+                    {saving ? (
+                      <span>Saving...</span>
+                    ) : (
+                      <>
+                        <CloudArrowUp size={20} weight="bold" />
+                        Save Scores
+                      </>
+                    )}
+                  </button>
+                </div>
               )}
             </div>
           </motion.div>

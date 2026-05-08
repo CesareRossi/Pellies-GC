@@ -208,13 +208,13 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion
       {/* Leaderboard Table */}
       <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md shadow-2xl overflow-hidden">
         {/* Table Header */}
-        <div className="bg-[#051A10] border-b border-[#D4AF37]/30 px-4 py-3">
-          <div className="grid grid-cols-12 gap-2 items-center text-xs font-semibold text-[#A9C5B4] uppercase tracking-wider">
-            <div className="col-span-1 text-center">Pos</div>
+        <div className="bg-[#051A10] border-b border-[#D4AF37]/30 px-3 sm:px-4 py-3">
+          <div className="grid grid-cols-12 gap-1 sm:gap-2 items-center text-[10px] sm:text-xs font-semibold text-[#A9C5B4] uppercase tracking-wider">
+            <div className="col-span-2 text-center">Pos</div>
             <div className="col-span-4 sm:col-span-3">Player</div>
-            <div className="col-span-2 text-center">{mode === 'stableford' ? 'Points' : 'Strokes'}</div>
+            <div className="col-span-2 text-center truncate">{mode === 'stableford' ? 'Pts' : 'Strk'}</div>
             <div className="col-span-2 text-center">Thru</div>
-            <div className="col-span-3 sm:col-span-4 text-right">Progress</div>
+            <div className="col-span-2 sm:col-span-3 text-right hidden sm:block">Progress</div>
           </div>
         </div>
 
@@ -226,10 +226,10 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: idx * 0.03 }}
-              className="grid grid-cols-12 gap-2 items-center px-4 py-3 hover:bg-[#D4AF37]/5 transition-colors"
+              className="grid grid-cols-12 gap-1 sm:gap-2 items-center px-3 sm:px-4 py-3 hover:bg-[#D4AF37]/5 transition-colors"
             >
               {/* Position */}
-              <div className="col-span-1 text-center">
+              <div className="col-span-2 text-center">
                 <span className="text-[#D4AF37] font-bold text-lg">
                   {getPositionDisplay(player.position)}
                 </span>
@@ -268,8 +268,8 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion
                 </span>
               </div>
 
-              {/* Progress Bar */}
-              <div className="col-span-3 sm:col-span-4">
+              {/* Progress Bar - hidden on mobile */}
+              <div className="col-span-2 sm:col-span-3 hidden sm:block">
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-2 bg-[#051A10] rounded-full overflow-hidden">
                     <div 
