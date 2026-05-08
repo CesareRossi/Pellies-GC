@@ -907,7 +907,7 @@ function App() {
       const isTeam = view === 'team_lb';
       const title = isTeam ? 'Team Leaderboard' : 'League Leaderboard';
       return (
-        <motion.div key={view} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
+        <motion.div key={`${view}-${roundsVersion}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
           <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{title}</h2>
           <DataTable data={isTeam ? teamLb?.leaderboard : leaderboard?.leaderboard}/>
         </motion.div>
@@ -915,7 +915,7 @@ function App() {
     }
     if (view === 'stableford' && sheetData && sheetDataMode === leaderboardMode) {
       return (
-        <motion.div key={`${view}-${viewParam}-${leaderboardMode}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
+        <motion.div key={`${view}-${viewParam}-${leaderboardMode}-${roundsVersion}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
           <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
           <ErrorBoundary>
             <GolfScorecard 
@@ -933,7 +933,7 @@ function App() {
     }
     if (view === 'teams' && sheetData && sheetDataMode === leaderboardMode) {
       return (
-        <motion.div key={`${view}-${viewParam}-${leaderboardMode}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
+        <motion.div key={`${view}-${viewParam}-${leaderboardMode}-${roundsVersion}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
           <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
           <TeamScorecard 
             data={sheetData?.data}
