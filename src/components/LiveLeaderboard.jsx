@@ -6,7 +6,7 @@ import * as db from '../services/supabaseService';
 // PGA-Style Live Leaderboard Component
 // Designed for tracking leaderboard during active rounds
 
-const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode }) => {
+const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion = 0 }) => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [dataMode, setDataMode] = useState(null); // Track which mode the data is for
@@ -58,6 +58,13 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode }) => {
     }, 120000);
     return () => clearInterval(interval);
   }, [loadData]);
+
+  // Refresh when roundsVersion changes (e.g., after score save)
+  useEffect(() => {
+    if (roundsVersion > 0) {
+      loadData();
+    }
+  }, [roundsVersion, loadData]);
 
   // Show loading if no data, or if data is for wrong mode (prevents flashing)
   if ((loading && !data) || (loading && dataMode !== mode)) {

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Golf, CloudArrowUp } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
 
-const QuickScoreDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayerId = null, currentRoundId = null }) => {
+const QuickScoreDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayerId = null, currentRoundId = null, onScoresSaved = null }) => {
   const [selectedRound, setSelectedRound] = useState('');
   const [selectedPlayer, setSelectedPlayer] = useState('');
   const [selectedHole, setSelectedHole] = useState(null);
@@ -153,6 +153,10 @@ const QuickScoreDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
     try {
       await db.upsertScores(scoresToSave);
       setSuccess(`Saved ${scoresToSave.length} score${scoresToSave.length > 1 ? 's' : ''}`);
+      // Trigger data refresh
+      if (onScoresSaved) {
+        onScoresSaved();
+      }
     } catch (e) {
       setError(e.message || 'Failed to save scores');
     } finally {

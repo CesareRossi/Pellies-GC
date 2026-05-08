@@ -899,7 +899,7 @@ function App() {
     if (view === 'live') {
       return (
         <motion.div key="live" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
-          <LiveLeaderboard currentRound={viewParam} onRefresh={handleRefresh} mode={leaderboardMode} setMode={setLeaderboardMode} />
+          <LiveLeaderboard currentRound={viewParam} onRefresh={handleRefresh} mode={leaderboardMode} setMode={setLeaderboardMode} roundsVersion={roundsVersion} />
         </motion.div>
       );
     }
@@ -1089,6 +1089,10 @@ function App() {
           userPlayerId={profile?.player_id}
           currentRoundId={viewParam || currentSeason?.current_round_id}
           roundsVersion={roundsVersion}
+          onScoresSaved={() => {
+            loadData();
+            loadView(view, viewParam);
+          }}
         />
       </div>
       <AnimatePresence>
