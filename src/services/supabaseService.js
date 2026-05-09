@@ -324,7 +324,8 @@ export async function updateRound(id, updates) {
 }
 
 export async function deleteRound(id) {
-  // Cascade delete: scores → round_holes → teams → exclusions → round
+  // Cascade delete: fines → scores → round_holes → teams → exclusions → round
+  await supabase.from('fines').delete().eq('round_id', id);
   const { error: e1 } = await supabase.from('scores').delete().eq('round_id', id);
   if (e1) throw new Error(`Failed to clear scores: ${e1.message}`);
   const { error: e2 } = await supabase.from('round_holes').delete().eq('round_id', id);
@@ -363,19 +364,23 @@ export async function setPlayerExcluded(roundId, playerId, excluded) {
 
 // Admin: clear scores for a single round (keeps the round + holes + teams)
 export async function clearRoundScores(roundId) {
+  // Also clear fines when clearing scores
+  await supabase.from('fines').delete().eq('round_id', roundId);
   const { error } = await supabase.from('scores').delete().eq('round_id', roundId);
   if (error) throw error;
 }
 
-// Admin: wipe all season data (scores + teams + round_holes + rounds) — players & courses kept
+// Admin: wipe all season data (fines + scores + teams + round_holes + rounds) — players & courses kept
 // Returns counts of deleted rows so we can detect RLS-silent-failures
 export async function resetSeasonData() {
+  const { data: finesDel } = await supabase.from('fines').delete().neq('id', 0).select('id');
   const { data: scoresDel } = await supabase.from('scores').delete().neq('id', 0).select('id');
   const { data: teamsDel } = await supabase.from('teams').delete().neq('id', 0).select('id');
   const { data: holesDel } = await supabase.from('round_holes').delete().neq('id', 0).select('id');
   const { data: roundsDel, error } = await supabase.from('rounds').delete().neq('id', 0).select('id');
   if (error) throw error;
   return {
+    fines: finesDel?.length || 0,
     scores: scoresDel?.length || 0,
     teams: teamsDel?.length || 0,
     holes: holesDel?.length || 0,
@@ -383,11 +388,15 @@ export async function resetSeasonData() {
   };
 }
 
-// Admin: clear ALL scores across the league (keep rounds / holes / teams)
+// Admin: clear ALL scores and fines across the league (keep rounds / holes / teams)
 export async function clearAllScores() {
-  const { data, error } = await supabase.from('scores').delete().neq('id', 0).select('id');
+  const { data: finesDel } = await supabase.from('fines').delete().neq('id', 0).select('id');
+  const { data: scoresDel, error } = await supabase.from('scores').delete().neq('id', 0).select('id');
   if (error) throw error;
-  return data?.length || 0;
+  return {
+    fines: finesDel?.length || 0,
+    scores: scoresDel?.length || 0,
+  };
 }
 
 // ===== ROUND HOLES =====
@@ -1112,6 +1121,7 @@ export async function getAwards() {
       .filter(e => e.total != null);
     if (entrants.length === 0) {
       perRoundAwards.push({
+        round_id: r.id,
         round_number: r.round_number,
         course: r.courses?.name || `Round ${r.round_number}`,
         beer_hole: r.beer_hole,
@@ -1166,6 +1176,7 @@ export async function getAwards() {
     }
 
     perRoundAwards.push({
+      round_id: r.id,
       round_number: r.round_number,
       course: r.courses?.name || `Round ${r.round_number}`,
       beer_hole: r.beer_hole,
@@ -1857,5 +1868,77 @@ export async function archiveAndStartNewSeason(newName) {
   if (eNew) throw new Error(`Failed to start new season: ${eNew.message}`);
 
   return { archived: current, started: created, summary };
+}
+
+// ===== FINES =====
+export async function getFinesForRound(roundId) {
+  const { data, error } = await supabase
+    .from('fines')
+    .select('*, players(name)')
+    .eq('round_id', roundId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function addFine(fine) {
+  const { data, error } = await supabase
+    .from('fines')
+    .insert(fine)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteFine(fineId) {
+  const { error } = await supabase
+    .from('fines')
+    .delete()
+    .eq('id', fineId);
+  if (error) throw error;
+}
+
+export async function settleFine(fineId, settled = true) {
+  const { data, error } = await supabase
+    .from('fines')
+    .update({ settled })
+    .eq('id', fineId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function getFinesSummary(roundId) {
+  const fines = await getFinesForRound(roundId);
+  const summary = {};
+  fines.forEach(fine => {
+    const playerName = fine.players?.name || 'Unknown';
+    if (!summary[playerName]) {
+      summary[playerName] = { shots: 0, beers: 0, hats: [], totalFines: 0 };
+    }
+    summary[playerName].totalFines++;
+    switch (fine.fine_type) {
+      case 'ThreePutt':
+      case 'BunkerToBunker':
+      case 'RestingOnClub':
+      case 'Shank':
+      case 'NotPastLadies':
+      case 'SandSpecialist':
+        summary[playerName].shots += 1;
+        break;
+      case 'FourPutt':
+        summary[playerName].beers += 1;
+        break;
+      case 'WorstNett':
+        summary[playerName].hats.push('Funky Hat');
+        break;
+      case 'WorstGross':
+        summary[playerName].hats.push('Special Hat');
+        break;
+    }
+  });
+  return summary;
 }
 

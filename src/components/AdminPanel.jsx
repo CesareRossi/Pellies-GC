@@ -1308,11 +1308,12 @@ const DangerPanel = () => {
   const doClear = async () => {
     setMsg(''); setBusy(true);
     try {
-      const count = await db.clearAllScores();
-      if (count === 0) {
-        setMsg('Warning: 0 scores were deleted. This usually means RLS in Supabase is blocking the delete. Run the SUPABASE_SETUP.sql from your repo in the Supabase SQL Editor to fix policies.');
+      const counts = await db.clearAllScores();
+      const total = counts.fines + counts.scores;
+      if (total === 0) {
+        setMsg('Warning: 0 rows were deleted. This usually means RLS in Supabase is blocking the delete. Run the SUPABASE_SETUP.sql from your repo in the Supabase SQL Editor to fix policies.');
       } else {
-        setMsg(`✅ ${count} score entries deleted. Click Refresh in the top bar to see the dashboard update.`);
+        setMsg(`✅ Deleted ${counts.fines} fines and ${counts.scores} scores. Click Refresh in the top bar to see the dashboard update.`);
       }
     } catch (e) { setMsg('Error: ' + e.message); }
     finally {
@@ -1327,11 +1328,11 @@ const DangerPanel = () => {
     setMsg(''); setBusy(true);
     try {
       const counts = await db.resetSeasonData();
-      const total = counts.scores + counts.teams + counts.holes + counts.rounds;
+      const total = counts.fines + counts.scores + counts.teams + counts.holes + counts.rounds;
       if (total === 0) {
         setMsg('Warning: 0 rows were deleted. This usually means RLS in Supabase is blocking deletes. Run the SUPABASE_SETUP.sql from your repo in the Supabase SQL Editor.');
       } else {
-        setMsg(`✅ Season reset. Deleted ${counts.scores} scores, ${counts.teams} teams, ${counts.holes} legacy per-round hole rows, ${counts.rounds} rounds. Course-level hole setup preserved. Click Refresh in the top bar to reload the dashboard.`);
+        setMsg(`✅ Season reset. Deleted ${counts.fines} fines, ${counts.scores} scores, ${counts.teams} teams, ${counts.holes} legacy per-round hole rows, ${counts.rounds} rounds. Course-level hole setup preserved. Click Refresh in the top bar to reload the dashboard.`);
       }
     } catch (e) { setMsg('Error: ' + e.message); }
     finally {

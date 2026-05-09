@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Flag, CaretDown, Trophy } from '@phosphor-icons/react';
+import TourFines from './TourFines';
 
 // Icon mapping for per-round awards
 const awardIcons = {
@@ -267,6 +268,7 @@ export default function Awards({ awards }) {
           )}
         </div>
         {awardsData?.per_round && <DrinksWatch perRound={awardsData.per_round} />}
+        {awardsData?.per_round && <TourFines rounds={awardsData.per_round} />}
       </div>
     );
   }
@@ -351,6 +353,9 @@ export default function Awards({ awards }) {
           </div>
         </div>
       )}
+
+      {/* Tour Fines - also show in unlocked state */}
+      <TourFines rounds={awardsData.per_round || []} />
 
       {/* Per-round awards */}
       {(awardsData.per_round || []).length > 0 && (
