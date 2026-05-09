@@ -373,11 +373,11 @@ export async function clearRoundScores(roundId) {
 // Admin: wipe all season data (fines + scores + teams + round_holes + rounds) — players & courses kept
 // Returns counts of deleted rows so we can detect RLS-silent-failures
 export async function resetSeasonData() {
-  const { data: finesDel } = await supabase.from('fines').delete().neq('id', 0).select('id');
-  const { data: scoresDel } = await supabase.from('scores').delete().neq('id', 0).select('id');
-  const { data: teamsDel } = await supabase.from('teams').delete().neq('id', 0).select('id');
-  const { data: holesDel } = await supabase.from('round_holes').delete().neq('id', 0).select('id');
-  const { data: roundsDel, error } = await supabase.from('rounds').delete().neq('id', 0).select('id');
+  const { data: finesDel } = await supabase.from('fines').delete().not('id', 'is', null).select('id');
+  const { data: scoresDel } = await supabase.from('scores').delete().not('id', 'is', null).select('id');
+  const { data: teamsDel } = await supabase.from('teams').delete().not('id', 'is', null).select('id');
+  const { data: holesDel } = await supabase.from('round_holes').delete().not('id', 'is', null).select('id');
+  const { data: roundsDel, error } = await supabase.from('rounds').delete().not('id', 'is', null).select('id');
   if (error) throw error;
   return {
     fines: finesDel?.length || 0,
@@ -390,8 +390,8 @@ export async function resetSeasonData() {
 
 // Admin: clear ALL scores and fines across the league (keep rounds / holes / teams)
 export async function clearAllScores() {
-  const { data: finesDel } = await supabase.from('fines').delete().neq('id', 0).select('id');
-  const { data: scoresDel, error } = await supabase.from('scores').delete().neq('id', 0).select('id');
+  const { data: finesDel } = await supabase.from('fines').delete().not('id', 'is', null).select('id');
+  const { data: scoresDel, error } = await supabase.from('scores').delete().not('id', 'is', null).select('id');
   if (error) throw error;
   return {
     fines: finesDel?.length || 0,
