@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { BeerBottle, Club, Flag, Golf, MinusCircle, PlusCircle, Skull, Trash, Wine, XCircle } from '@phosphor-icons/react';
+import { BeerBottle, Club, Flag, Golf, MinusCircle, PlusCircle, Skull, Trash, Wine, XCircle, Lock } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
 
 const FINE_TYPES = [
@@ -13,12 +13,50 @@ const FINE_TYPES = [
   { id: 'SandSpecialist', label: 'Sand Specialist', icon: <Golf size={20} />, penalty: '1 Shot' },
 ];
 
-const Fines = ({ rounds, players, currentRoundId }) => {
-  const [selectedRound, setSelectedRound] = useState(currentRoundId || '');
+const Fines = ({ rounds, players, userId, userPlayerId = null, currentRoundId = null }) => {
+  const [selectedRound, setSelectedRound] = useState('');
   const [selectedPlayer, setSelectedPlayer] = useState('');
   const [fines, setFines] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const hasSetDefaults = useRef(false);
+
+  // Get live round (is_current flag or currentRoundId match)
+  const liveRound = useMemo(() => {
+    return rounds.find(r => r.is_current) || 
+           rounds.find(r => r.id === parseInt(currentRoundId)) ||
+           rounds.find(r => !r.is_closed);
+  }, [rounds, currentRoundId]);
+
+  // Set round default once when component mounts with data
+  useEffect(() => {
+    if (hasSetDefaults.current) return;
+    if (rounds.length === 0) return;
+    
+    hasSetDefaults.current = true;
+    
+    // Set round default priority: 1) Live round if open, 2) First open round
+    let defaultRound = null;
+    if (liveRound && !liveRound.is_closed) {
+      defaultRound = liveRound.id;
+    } else {
+      const openRounds = rounds.filter(r => !r.is_closed);
+      defaultRound = openRounds[0]?.id || rounds[0]?.id;
+    }
+    if (defaultRound) setSelectedRound(defaultRound);
+  }, [rounds, liveRound]);
+
+  // Set player default whenever userPlayerId becomes available
+  useEffect(() => {
+    if (!userPlayerId) return;
+    if (players.length === 0) return;
+    if (selectedPlayer) return; // Don't override if already selected
+    
+    const linkedPlayer = players.find(p => p.id === userPlayerId);
+    if (linkedPlayer) {
+      setSelectedPlayer(userPlayerId);
+    }
+  }, [userPlayerId, players, selectedPlayer]);
 
   const loadFines = useCallback(async () => {
     if (!selectedRound) return;
@@ -97,7 +135,8 @@ const Fines = ({ rounds, players, currentRoundId }) => {
     }
   });
 
-  const activeRounds = rounds.filter(r => !r.is_closed);
+  const selectedRoundData = rounds.find(r => r.id === parseInt(selectedRound));
+  const isRoundClosed = selectedRoundData?.is_closed;
 
   return (
     <motion.div
@@ -126,9 +165,9 @@ const Fines = ({ rounds, players, currentRoundId }) => {
               className="w-full px-4 py-3 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white focus:outline-none text-sm"
             >
               <option value="">Select round...</option>
-              {activeRounds.map(r => (
+              {rounds.map(r => (
                 <option key={r.id} value={r.id}>
-                  {r.courses?.name} (Round {r.round_number})
+                  {r.courses?.name} (Round {r.round_number}){r.is_closed ? ' 🔒' : ''}
                 </option>
               ))}
             </select>
@@ -153,10 +192,18 @@ const Fines = ({ rounds, players, currentRoundId }) => {
             <p className="text-red-400 text-sm">{error}</p>
           </div>
         )}
+
+        {/* Closed Round Warning */}
+        {isRoundClosed && (
+          <div className="mt-4 p-3 bg-amber-900/20 border border-amber-500/30 rounded-lg flex items-center gap-3">
+            <Lock size={18} className="text-amber-400 flex-shrink-0" />
+            <p className="text-amber-400 text-sm">This round is closed. Fines can no longer be added.</p>
+          </div>
+        )}
       </div>
 
-      {/* Fine Buttons */}
-      {selectedRound && selectedPlayer && (
+      {/* Fine Buttons - Hidden if round is closed */}
+      {selectedRound && selectedPlayer && !isRoundClosed && (
         <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md p-4 mb-6">
           <h3 className="text-sm font-semibold text-[#D4AF37] uppercase tracking-wider mb-4">
             Add Fine

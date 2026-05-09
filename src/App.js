@@ -951,7 +951,7 @@ function App() {
     if (view === 'score_entry' && canScore) return <ScoreEntry key={`score-entry-${roundsVersion}`} rounds={rounds} players={players} userId={user?.id} userPlayerId={profile?.player_id} currentRoundId={viewParam || currentSeason?.current_round_id} roundsVersion={roundsVersion}/>;
     if (view === 'season_wizard') return <SeasonWizard onComplete={()=>{ loadData(); navigate('overview'); }}/>;
     if (view === 'admin') return <AdminPanel onSeasonChanged={loadData} currentUserId={user?.id} allPlayers={players}/>;
-    if (view === 'fines' && isApprovedUser) return <Fines rounds={rounds} players={players} currentRoundId={viewParam || currentSeason?.current_round_id} />;
+    if (view === 'fines' && isApprovedUser) return <Fines rounds={rounds} players={players} userId={user?.id} userPlayerId={profile?.player_id} currentRoundId={viewParam || currentSeason?.current_round_id} />;
     return null;
   };
 
