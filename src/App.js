@@ -32,7 +32,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 import { createClient } from '@supabase/supabase-js';
-import { Trophy, ChartLine, ArrowsClockwise, User, Target, Flag, Fire, TrendUp, Medal, Golf, CaretDown, UsersThree, Crown, Lightning, MapPin, Users, Gauge, Star, Lock, PencilSimple, Check, X, SignOut, CloudArrowUp, DownloadSimple, Gear, UserPlus, ShieldCheck, BeerBottle } from '@phosphor-icons/react';
+import { Trophy, ChartLine, ArrowsClockwise, User, Target, Flag, Fire, TrendUp, Medal, Golf, CaretDown, UsersThree, Crown, Lightning, MapPin, Users, Gauge, Star, Lock, PencilSimple, Check, X, SignOut, CloudArrowUp, DownloadSimple, Gear, UserPlus, ShieldCheck, BeerBottle, Scroll } from '@phosphor-icons/react';
 import * as db from './services/supabaseService';
 import AdminPanel from './components/AdminPanel';
 import SeasonWizard from './components/SeasonWizard';
@@ -44,6 +44,7 @@ import LiveLeaderboard from './components/LiveLeaderboard';
 import QuickScoreDrawer from './components/QuickScoreDrawer';
 import QuickFinesDrawer from './components/QuickFinesDrawer';
 import Fines from './components/Fines';
+import RulesInfo from './components/RulesInfo';
 
 const REFRESH_INTERVAL = 5 * 60 * 1000;
 
@@ -833,6 +834,7 @@ function App() {
     { id: 'stats', label: 'Player Stats' },
     { id: 'awards', label: 'Awards' },
     ...(isApprovedUser ? [{ id: 'fines', label: 'Fines' }] : []),
+    { id: 'rules', label: 'Rules' },
     ...(canScore ? [{ id: 'score_entry', label: 'Scores' }] : []),
     ...(isAdmin ? [{ id: 'season_wizard', label: 'Season Setup' }, { id: 'admin', label: 'Admin' }] : []),
   ];
@@ -844,7 +846,7 @@ function App() {
     { id: 'league_lb', label: 'League Leaderboard' },
     { id: 'team_lb', label: 'Team Leaderboard' },
   ];
-  const quickMenuActiveViews = new Set(['stats', 'awards', 'score_entry', 'season_wizard', 'admin', 'fines']);
+  const quickMenuActiveViews = new Set(['stats', 'awards', 'score_entry', 'season_wizard', 'admin', 'fines', 'rules']);
   const primaryNavBtnClass = (isActive) => `flex items-center gap-2 px-3 py-2 text-sm font-sans rounded-lg whitespace-nowrap border transition-all ${
     isActive
       ? 'bg-[#D4AF37]/15 text-[#D4AF37] border-[#D4AF37]/30 shadow-[0_0_0_1px_rgba(212,175,55,0.08)]'
@@ -954,6 +956,7 @@ function App() {
     if (view === 'season_wizard') return <SeasonWizard onComplete={()=>{ loadData(); navigate('overview'); }}/>;
     if (view === 'admin') return <AdminPanel onSeasonChanged={loadData} currentUserId={user?.id} allPlayers={players}/>;
     if (view === 'fines' && isApprovedUser) return <Fines rounds={rounds} players={players} userId={user?.id} userPlayerId={profile?.player_id} currentRoundId={viewParam || currentSeason?.current_round_id} />;
+    if (view === 'rules') return <RulesInfo />;
     return null;
   };
 
