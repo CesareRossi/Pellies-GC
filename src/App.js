@@ -32,7 +32,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 import { createClient } from '@supabase/supabase-js';
-import { Trophy, ChartLine, ArrowsClockwise, User, Target, Flag, Fire, TrendUp, Medal, Golf, CaretDown, UsersThree, Crown, Lightning, MapPin, Users, Gauge, Star, Lock, PencilSimple, Check, X, SignOut, CloudArrowUp, DownloadSimple, Gear, UserPlus, ShieldCheck } from '@phosphor-icons/react';
+import { Trophy, ChartLine, ArrowsClockwise, User, Target, Flag, Fire, TrendUp, Medal, Golf, CaretDown, UsersThree, Crown, Lightning, MapPin, Users, Gauge, Star, Lock, PencilSimple, Check, X, SignOut, CloudArrowUp, DownloadSimple, Gear, UserPlus, ShieldCheck, BeerBottle } from '@phosphor-icons/react';
 import * as db from './services/supabaseService';
 import AdminPanel from './components/AdminPanel';
 import SeasonWizard from './components/SeasonWizard';
@@ -42,6 +42,7 @@ import GolfScorecard from './components/GolfScorecard';
 import TeamScorecard from './components/TeamScorecard';
 import LiveLeaderboard from './components/LiveLeaderboard';
 import QuickScoreDrawer from './components/QuickScoreDrawer';
+import QuickFinesDrawer from './components/QuickFinesDrawer';
 import Fines from './components/Fines';
 
 const REFRESH_INTERVAL = 5 * 60 * 1000;
@@ -664,6 +665,7 @@ function App() {
     return saved === 'stroke' || saved === 'stableford' ? saved : 'stableford';
   }); // 'stableford' | 'stroke'
   const [quickScoreOpen, setQuickScoreOpen] = useState(false);
+  const [quickFinesOpen, setQuickFinesOpen] = useState(false);
   const [rounds, setRounds] = useState([]);
   const [players, setPlayers] = useState([]);
   const [currentSeason, setCurrentSeason] = useState(null);
@@ -1075,15 +1077,30 @@ function App() {
           </AnimatePresence>
         </main>
 
-        {/* Quick Score FAB - Only visible on mobile/tablet when user can score */}
+        {/* Quick Score & Fines FABs - Only visible on mobile/tablet */}
         {user && (
-          <button
-            onClick={() => setQuickScoreOpen(true)}
-            className="lg:hidden fixed bottom-6 right-6 z-50 w-14 h-14 bg-[#D4AF37] text-[#051A10] rounded-full shadow-2xl flex items-center justify-center hover:bg-[#F1D67E] active:scale-95 transition-all"
-            title="Quick Score"
-          >
-            <Golf size={28} weight="fill" />
-          </button>
+          <div className="lg:hidden fixed bottom-6 right-6 z-50 flex flex-col gap-3">
+            {/* Quick Fines FAB - Only for approved users */}
+            {isApprovedUser && (
+              <button
+                onClick={() => setQuickFinesOpen(true)}
+                className="w-14 h-14 bg-[#0F2C1D] border-2 border-[#D4AF37] text-[#D4AF37] rounded-full shadow-2xl flex items-center justify-center hover:bg-[#D4AF37] hover:text-[#051A10] active:scale-95 transition-all"
+                title="Quick Fines"
+              >
+                <BeerBottle size={28} weight="fill" />
+              </button>
+            )}
+            {/* Quick Score FAB - Only for users who can score */}
+            {canScore && (
+              <button
+                onClick={() => setQuickScoreOpen(true)}
+                className="w-14 h-14 bg-[#D4AF37] text-[#051A10] rounded-full shadow-2xl flex items-center justify-center hover:bg-[#F1D67E] active:scale-95 transition-all"
+                title="Quick Score"
+              >
+                <Golf size={28} weight="fill" />
+              </button>
+            )}
+          </div>
         )}
 
         {/* Quick Score Drawer */}
@@ -1097,6 +1114,21 @@ function App() {
           currentRoundId={viewParam || currentSeason?.current_round_id}
           roundsVersion={roundsVersion}
           onScoresSaved={() => {
+            loadData();
+            loadView(view, viewParam);
+          }}
+        />
+
+        {/* Quick Fines Drawer */}
+        <QuickFinesDrawer
+          isOpen={quickFinesOpen}
+          onClose={() => setQuickFinesOpen(false)}
+          rounds={rounds}
+          players={players}
+          userId={user?.id}
+          userPlayerId={profile?.player_id}
+          currentRoundId={viewParam || currentSeason?.current_round_id}
+          onFinesSaved={() => {
             loadData();
             loadView(view, viewParam);
           }}
