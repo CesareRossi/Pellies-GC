@@ -14,16 +14,20 @@ const FINE_TYPES = [
 ];
 
 const QuickFinesDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayerId = null, currentRoundId = null, onFinesSaved = null }) => {
+  const STORAGE_KEY = 'quickFines_lastPlayer';
   const [selectedRound, setSelectedRound] = useState('');
-  const [selectedPlayer, setSelectedPlayer] = useState('');
-  const [selectedFines, setSelectedFines] = useState(new Set()); // Set of fine_type IDs
-  const [existingFines, setExistingFines] = useState([]);
+  const [selectedPlayer, setSelectedPlayer] = useState(() => {
+    // Initialize from localStorage if available
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved || '';
+  });
+  const [fines, setFines] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [excludedPlayers, setExcludedPlayers] = useState(new Set());
   const [roundClosed, setRoundClosed] = useState(false);
+  const [addingFine, setAddingFine] = useState(null); // Track which fine is being added
 
   // Get active (non-closed) rounds only
   const activeRounds = useMemo(() => rounds.filter(r => !r.is_closed), [rounds]);
@@ -34,6 +38,20 @@ const QuickFinesDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
            rounds.find(r => r.id === parseInt(currentRoundId)) ||
            rounds.find(r => !r.is_closed);
   }, [rounds, currentRoundId]);
+
+  // Load fines for selected round
+  const loadFines = async () => {
+    if (!selectedRound) {
+      setFines([]);
+      return;
+    }
+    try {
+      const data = await db.getFinesForRound(parseInt(selectedRound));
+      setFines(data || []);
+    } catch (e) {
+      setError('Failed to load fines');
+    }
+  };
 
   // Set defaults when drawer opens
   useEffect(() => {
@@ -49,28 +67,28 @@ const QuickFinesDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
       }
       setSelectedRound(defaultRound ? String(defaultRound) : '');
       
-      // Default player: linked player for this user
-      if (userPlayerId && players.find(p => p.id === userPlayerId)) {
-        setSelectedPlayer(String(userPlayerId));
-      } else {
-        setSelectedPlayer('');
+      // Only set default player if none selected from localStorage
+      if (!selectedPlayer) {
+        // Default to linked player for this user
+        if (userPlayerId && players.find(p => p.id === userPlayerId)) {
+          setSelectedPlayer(String(userPlayerId));
+          localStorage.setItem(STORAGE_KEY, String(userPlayerId));
+        }
       }
       
-      // Reset UI state
-      setSelectedFines(new Set());
-      setExistingFines([]);
+      // Reset UI state but keep player selection
+      setFines([]);
       setError('');
       setSuccess('');
     }
-  }, [isOpen, liveRound, activeRounds, userPlayerId, players]);
+  }, [isOpen, liveRound, activeRounds, userPlayerId, players, selectedPlayer]);
 
-  // Load existing fines when round/player changes
+  // Load round data when round changes
   useEffect(() => {
     if (!selectedRound) {
       setRoundClosed(false);
       setExcludedPlayers(new Set());
-      setExistingFines([]);
-      setSelectedFines(new Set());
+      setFines([]);
       setLoading(false);
       return;
     }
@@ -84,37 +102,28 @@ const QuickFinesDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
       db.getFinesForRound(parseInt(selectedRound))
     ]).then(([exclusionIds, finesData]) => {
       setExcludedPlayers(new Set(exclusionIds || []));
-      setExistingFines(finesData || []);
-      
-      // If player is selected, pre-select their existing fines
-      if (selectedPlayer) {
-        const playerFines = (finesData || []).filter(f => f.player_id === parseInt(selectedPlayer));
-        setSelectedFines(new Set(playerFines.map(f => f.fine_type)));
-      } else {
-        setSelectedFines(new Set());
-      }
+      setFines(finesData || []);
     }).catch(() => {
-      setExistingFines([]);
-      setSelectedFines(new Set());
+      setFines([]);
     }).finally(() => {
       setLoading(false);
     });
-  }, [selectedRound, rounds, selectedPlayer]);
+  }, [selectedRound, rounds]);
 
-  const toggleFine = (fineType) => {
-    if (roundClosed) return;
-    setSelectedFines(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(fineType)) {
-        newSet.delete(fineType);
-      } else {
-        newSet.add(fineType);
-      }
-      return newSet;
-    });
+  // Save player selection to localStorage whenever it changes
+  useEffect(() => {
+    if (selectedPlayer) {
+      localStorage.setItem(STORAGE_KEY, selectedPlayer);
+    }
+  }, [selectedPlayer]);
+
+  // Get player's fines for selected round
+  const getPlayerFines = () => {
+    return fines.filter(f => f.player_id === parseInt(selectedPlayer));
   };
 
-  const handleSubmit = async () => {
+  // Add fine (always adds new - allows multiple of same type)
+  const handleAddFine = async (fineType) => {
     if (!selectedRound || !selectedPlayer) {
       setError('Please select a round and player');
       return;
@@ -125,50 +134,39 @@ const QuickFinesDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
       return;
     }
 
-    const finesToAdd = Array.from(selectedFines);
-    if (finesToAdd.length === 0) {
-      setError('No fines selected');
-      return;
-    }
-
-    setSaving(true);
-    setError('');
-    setSuccess('');
-
     try {
-      // Add all selected fines
-      for (const fineType of finesToAdd) {
-        // Check if fine already exists
-        const exists = existingFines.some(f => 
-          f.player_id === parseInt(selectedPlayer) && f.fine_type === fineType
-        );
-        if (!exists) {
-          await db.addFine({
-            round_id: parseInt(selectedRound),
-            player_id: parseInt(selectedPlayer),
-            fine_type: fineType,
-            settled: false,
-          });
-        }
-      }
-      
-      setSuccess(`Added ${finesToAdd.length} fine${finesToAdd.length > 1 ? 's' : ''}`);
-      
-      // Refresh fines data
-      const updatedFines = await db.getFinesForRound(parseInt(selectedRound));
-      setExistingFines(updatedFines || []);
-      
-      // Trigger data refresh
-      if (onFinesSaved) {
-        onFinesSaved();
-      }
+      setAddingFine(fineType);
+      await db.addFine({
+        round_id: parseInt(selectedRound),
+        player_id: parseInt(selectedPlayer),
+        fine_type: fineType,
+        settled: false,
+      });
+      await loadFines();
+      setSuccess(`${FINE_TYPES.find(t => t.id === fineType)?.label} added`);
+      if (onFinesSaved) onFinesSaved();
     } catch (e) {
-      setError(e.message || 'Failed to save fines');
+      setError('Failed to add fine');
     } finally {
-      setSaving(false);
-      setTimeout(() => { setError(''); setSuccess(''); }, 4000);
+      setAddingFine(null);
+      setTimeout(() => { setError(''); setSuccess(''); }, 3000);
     }
   };
+
+  // Remove specific fine by ID
+  const handleRemoveFine = async (fineId, fineType) => {
+    try {
+      await db.deleteFine(fineId);
+      await loadFines();
+      setSuccess(`${FINE_TYPES.find(t => t.id === fineType)?.label} removed`);
+      if (onFinesSaved) onFinesSaved();
+    } catch (e) {
+      setError('Failed to remove fine');
+    } finally {
+      setTimeout(() => { setError(''); setSuccess(''); }, 3000);
+    }
+  };
+
 
   const availablePlayers = players.filter(p => !excludedPlayers.has(p.id));
 
@@ -261,10 +259,10 @@ const QuickFinesDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
                 </div>
               )}
 
-              {/* Fine Types Grid */}
+              {/* Fine Types Grid - Add Fines */}
               {selectedPlayer && !roundClosed && (
                 <div>
-                  <label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Select Fines</label>
+                  <label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Add Fine</label>
                   {loading ? (
                     <div className="flex items-center justify-center py-8">
                       <div className="w-8 h-8 border-2 border-[#D4AF37]/30 border-t-[#D4AF37] rounded-full animate-spin" />
@@ -273,32 +271,63 @@ const QuickFinesDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
                     <div className="grid grid-cols-2 gap-3">
                       {FINE_TYPES.map(type => {
                         const Icon = type.icon;
-                        const isSelected = selectedFines.has(type.id);
-                        const alreadyExists = existingFines.some(f => 
-                          f.player_id === parseInt(selectedPlayer) && f.fine_type === type.id
-                        );
+                        const isAdding = addingFine === type.id;
                         return (
                           <button
                             key={type.id}
-                            onClick={() => toggleFine(type.id)}
-                            disabled={alreadyExists}
-                            className={`flex flex-col items-center gap-2 p-3 rounded-lg border transition-all relative ${
-                              alreadyExists
-                                ? 'bg-emerald-900/20 border-emerald-500/30 opacity-60 cursor-not-allowed'
-                                : isSelected
-                                  ? 'bg-[#D4AF37]/20 border-[#D4AF37] text-[#D4AF37]'
-                                  : 'bg-[#051A10] border-[#D4AF37]/20 text-white hover:border-[#D4AF37]/50'
-                            }`}
+                            onClick={() => handleAddFine(type.id)}
+                            disabled={isAdding}
+                            className={`flex flex-col items-center gap-2 p-3 rounded-lg border transition-all relative bg-[#051A10] border-[#D4AF37]/20 text-white hover:border-[#D4AF37]/50 active:scale-[0.98] ${isAdding ? 'opacity-50' : ''}`}
                           >
                             <Icon size={24} weight="duotone" />
                             <div className="text-center">
                               <p className="text-xs font-medium">{type.label}</p>
                               <p className="text-[10px] text-[#A9C5B4]">{type.penalty}</p>
                             </div>
-                            {alreadyExists && (
-                              <span className="absolute top-1 right-1 w-2 h-2 bg-emerald-500 rounded-full" />
+                            {isAdding && (
+                              <span className="absolute inset-0 flex items-center justify-center bg-[#0F2C1D]/50 rounded-lg">
+                                <div className="w-4 h-4 border-2 border-[#D4AF37]/30 border-t-[#D4AF37] rounded-full animate-spin" />
+                              </span>
                             )}
                           </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Current Fines List */}
+              {selectedPlayer && (
+                <div>
+                  <label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">
+                    Current Fines ({getPlayerFines().length})
+                  </label>
+                  {getPlayerFines().length === 0 ? (
+                    <p className="text-sm text-[#A9C5B4] text-center py-4">No fines yet</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {getPlayerFines().map(fine => {
+                        const fineType = FINE_TYPES.find(t => t.id === fine.fine_type);
+                        const Icon = fineType?.icon || BeerBottle;
+                        return (
+                          <div key={fine.id} className="flex items-center justify-between p-3 rounded-lg bg-[#051A10]/50 border border-[#D4AF37]/10">
+                            <div className="flex items-center gap-3">
+                              <Icon size={18} weight="duotone" className="text-[#D4AF37]" />
+                              <div>
+                                <p className="text-sm font-medium text-white">{fineType?.label || fine.fine_type}</p>
+                                <p className="text-[10px] text-[#A9C5B4]">{fineType?.penalty || ''}</p>
+                              </div>
+                            </div>
+                            {!roundClosed && (
+                              <button
+                                onClick={() => handleRemoveFine(fine.id, fine.fine_type)}
+                                className="p-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded-lg transition-colors"
+                              >
+                                <X size={18} />
+                              </button>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
@@ -315,26 +344,6 @@ const QuickFinesDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
               {success && (
                 <div className="p-3 bg-emerald-900/20 border border-emerald-500/30 rounded-lg">
                   <p className="text-emerald-400 text-sm">{success}</p>
-                </div>
-              )}
-
-              {/* Submit button - sticky at bottom */}
-              {selectedPlayer && !roundClosed && (
-                <div className="sticky bottom-0 left-0 right-0 bg-[#0F2C1D]/95 backdrop-blur-sm pt-3 pb-4 px-4 -mx-4 border-t border-[#D4AF37]/20 z-10">
-                  <button
-                    onClick={handleSubmit}
-                    disabled={saving || selectedFines.size === 0}
-                    className="w-full py-4 bg-[#D4AF37] text-[#051A10] font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform shadow-lg"
-                  >
-                    {saving ? (
-                      <span>Saving...</span>
-                    ) : (
-                      <>
-                        <CloudArrowUp size={20} weight="bold" />
-                        Save Fines ({selectedFines.size})
-                      </>
-                    )}
-                  </button>
                 </div>
               )}
             </div>

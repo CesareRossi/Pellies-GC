@@ -4,8 +4,13 @@ import { X, Golf, CloudArrowUp } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
 
 const QuickScoreDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayerId = null, currentRoundId = null, onScoresSaved = null }) => {
+  const STORAGE_KEY = 'quickScore_lastPlayer';
   const [selectedRound, setSelectedRound] = useState('');
-  const [selectedPlayer, setSelectedPlayer] = useState('');
+  const [selectedPlayer, setSelectedPlayer] = useState(() => {
+    // Initialize from localStorage if available
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved || '';
+  });
   const [selectedHole, setSelectedHole] = useState(null);
   const [holes, setHoles] = useState([]);
   const [holesLoading, setHolesLoading] = useState(false);
@@ -42,19 +47,21 @@ const QuickScoreDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
       }
       setSelectedRound(defaultRound ? String(defaultRound) : '');
       
-      // Default player: linked player for this user
-      if (userPlayerId && players.find(p => p.id === userPlayerId)) {
-        setSelectedPlayer(String(userPlayerId));
-      } else {
-        setSelectedPlayer('');
+      // Only set default player if none selected from localStorage
+      if (!selectedPlayer) {
+        // Default to linked player for this user
+        if (userPlayerId && players.find(p => p.id === userPlayerId)) {
+          setSelectedPlayer(String(userPlayerId));
+          localStorage.setItem(STORAGE_KEY, String(userPlayerId));
+        }
       }
       
-      // Reset UI state but keep any loaded scores
+      // Reset UI state but keep player selection
       setSelectedHole(null);
       setError('');
       setSuccess('');
     }
-  }, [isOpen, liveRound, activeRounds, userPlayerId, players]);
+  }, [isOpen, liveRound, activeRounds, userPlayerId, players, selectedPlayer]);
 
   useEffect(() => {
     if (!selectedRound) {
@@ -100,6 +107,13 @@ const QuickScoreDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
       setHolesLoading(false);
     });
   }, [selectedRound, rounds, selectedPlayer, isOpen]);
+
+  // Save player selection to localStorage whenever it changes
+  useEffect(() => {
+    if (selectedPlayer) {
+      localStorage.setItem(STORAGE_KEY, selectedPlayer);
+    }
+  }, [selectedPlayer]);
 
   const updateScore = (holeNum, val) => {
     if (val === '' || val === null || val === undefined) {

@@ -63,7 +63,20 @@ export async function signUp(email, password, displayName) {
 }
 
 export async function signIn(email, password) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  let data, error;
+  try {
+    const res = await supabase.auth.signInWithPassword({ email, password });
+    data = res.data;
+    error = res.error;
+  } catch (err) {
+    // Handle network/body stream errors from Supabase auth
+    const m = err?.message?.toLowerCase() || '';
+    if (m.includes('body') && (m.includes('disturbed') || m.includes('locked') || m.includes('stream'))) {
+      throw new Error('Connection interrupted. Please wait a moment and try again.');
+    }
+    throw err;
+  }
+  
   if (error) {
     // Friendly messages
     const m = error.message?.toLowerCase() || '';
@@ -72,6 +85,10 @@ export async function signIn(email, password) {
     }
     if (m.includes('invalid login') || m.includes('invalid credentials')) {
       throw new Error('Incorrect email or password.');
+    }
+    // Handle body disturbed/locked error from error response
+    if (m.includes('body') && (m.includes('disturbed') || m.includes('locked'))) {
+      throw new Error('Connection interrupted. Please wait a moment and try again.');
     }
     throw error;
   }
@@ -541,11 +558,10 @@ export async function updateUserPlayerLink(userId, playerId) {
   return data;
 }
 
-// Remove user: mark as 'removed' in our profile table (we can't delete from auth.users with anon key — admin must do that separately in Supabase dashboard).
+// Remove user: delete from user_profiles table (we can't delete from auth.users with anon key — admin must do that separately in Supabase dashboard).
 export async function removeUser(userId) {
-  const { data, error } = await supabase.from('user_profiles').update({ role: 'removed' }).eq('id', userId).select().single();
+  const { error } = await supabase.from('user_profiles').delete().eq('id', userId);
   if (error) throw error;
-  return data;
 }
 
 // ===== STABLEFORD CALCULATION =====
