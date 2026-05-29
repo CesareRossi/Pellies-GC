@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import '@/App.css';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Routes, Route, useLocation, useNavigate, useParams, Navigate } from 'react-router-dom';
 import NavDropdown from './components/navigation/NavDropdown';
 import PlayerCard from './components/PlayerCard';
 import Overview from './components/Overview';
@@ -61,8 +62,53 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const formatLastUpdated = (ts) => ts ? new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Never';
 
+// ===== ROUND SCORECARD WRAPPERS =====
+const RoundScorecardWrapper = ({ sheetData, sheetDataMode, leaderboardMode, roundsVersion, user }) => {
+  const { roundId } = useParams();
+  // This wrapper would need to load the appropriate round data based on roundId
+  // For now, we'll use the existing sheetData from parent
+  return (
+    <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
+      <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
+      <ErrorBoundary>
+        <GolfScorecard 
+          data={sheetData?.data}
+          title={null}
+          currentUser={user?.name}
+          jokerHole={sheetData?.joker_hole}
+          beerHole={sheetData?.beer_hole}
+          mode={leaderboardMode}
+          playerHandicaps={sheetData?.player_handicaps}
+        />
+      </ErrorBoundary>
+    </motion.div>
+  );
+};
+
+const RoundTeamScorecardWrapper = ({ sheetData, sheetDataMode, leaderboardMode, roundsVersion }) => {
+  const { roundId } = useParams();
+  // This wrapper would need to load the appropriate round data based on roundId
+  // For now, we'll use the existing sheetData from parent
+  return (
+    <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
+      <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
+      <TeamScorecard 
+        data={sheetData?.data}
+        title={null}
+        jokerHole={sheetData?.joker_hole}
+        beerHole={sheetData?.beer_hole}
+        mode={leaderboardMode}
+        playerHandicaps={sheetData?.player_handicaps}
+      />
+    </motion.div>
+  );
+};
+
 // ===== MAIN APP =====
 function App() {
+  const location = useLocation();
+  const routerNavigate = useNavigate();
+  const isNavigatingRef = useRef(false);
   const [view, setView] = useState('overview');
   const [viewParam, setViewParam] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -187,6 +233,24 @@ function App() {
     }
     setView(v);
     setViewParam(param || null);
+    
+    // Also navigate via router
+    let path = '/';
+    if (v === 'overview') path = '/';
+    else if (v === 'live') path = '/live';
+    else if (v === 'league_lb') path = '/leaderboards/league';
+    else if (v === 'team_lb') path = '/leaderboards/team';
+    else if (v === 'stats') path = '/stats';
+    else if (v === 'awards') path = '/awards';
+    else if (v === 'score_entry') path = '/scores';
+    else if (v === 'fines') path = '/fines';
+    else if (v === 'rules') path = '/rules';
+    else if (v === 'admin') path = '/admin';
+    else if (v === 'season_wizard') path = '/season-wizard';
+    else if (v === 'stableford' && param) path = '/rounds/' + param + '/scorecard';
+    else if (v === 'teams' && param) path = `/rounds/${param}/teams';
+    
+    routerNavigate(path);
   };
 
   const handleRefresh = async () => {
@@ -223,9 +287,10 @@ function App() {
       try { await db.signOut(); } catch (_) {}
       setUser(null);
       setProfile(null);
+      routerNavigate('/');
       setAuthNotice('Your account is disabled. Please contact an admin.');
     })();
-  }, [user, isBlockedUser]);
+  }, [user, isBlockedUser, routerNavigate]);
 
   useEffect(() => {
     if (!user) {
@@ -286,6 +351,68 @@ function App() {
     if ((view === 'admin' || view === 'season_wizard') && !isAdmin) setView('overview');
   }, [view, canScore, isAdmin]);
 
+  // Sync URL with view state (Phase 1: one-way sync from view to URL)
+  useEffect(() => {
+    if (isNavigatingRef.current) {
+      isNavigatingRef.current = false;
+      return;
+    }
+    
+    let path = '/';
+    if (view === 'overview') path = '/';
+    else if (view === 'live') path = '/live';
+    else if (view === 'league_lb') path = '/leaderboards/league';
+    else if (view === 'team_lb') path = '/leaderboards/team';
+    else if (view === 'stats') path = '/stats';
+    else if (view === 'awards') path = '/awards';
+    else if (view === 'score_entry') path = '/scores';
+    else if (view === 'fines') path = '/fines';
+    else if (view === 'rules') path = '/rules';
+    else if (view === 'admin') path = '/admin';
+    else if (view === 'season_wizard') path = '/season-wizard';
+    else if (view === 'stableford' && viewParam) path = '/rounds/' + viewParam + '/scorecard';
+    else if (view === 'teams' && viewParam) path = '/rounds/' + viewParam + '/teams';
+    
+    if (path !== location.pathname) {
+      isNavigatingRef.current = true;
+      routerNavigate(path);
+    }
+  }, [view, viewParam, location.pathname, routerNavigate]);
+
+  // Sync URL changes to view state (Phase 1: reverse sync from URL to view)
+  useEffect(() => {
+    const path = location.pathname;
+    let newView = 'overview';
+    let newParam = null;
+
+    if (path === '/') newView = 'overview';
+    else if (path === '/live') newView = 'live';
+    else if (path === '/leaderboards/league') newView = 'league_lb';
+    else if (path === '/leaderboards/team') newView = 'team_lb';
+    else if (path === '/stats') newView = 'stats';
+    else if (path === '/awards') newView = 'awards';
+    else if (path === '/scores') newView = 'score_entry';
+    else if (path === '/fines') newView = 'fines';
+    else if (path === '/rules') newView = 'rules';
+    else if (path === '/admin') newView = 'admin';
+    else if (path === '/season-wizard') newView = 'season_wizard';
+    else if (path.startsWith('/rounds/') && path.endsWith('/scorecard')) {
+      newView = 'stableford';
+      const match = path.match(/\/rounds\/(\d+)\/scorecard/);
+      newParam = match ? match[1] : null;
+    }
+    else if (path.startsWith('/rounds/') && path.endsWith('/teams')) {
+      newView = 'teams';
+      const match = path.match(/\/rounds\/(\d+)\/teams/);
+      newParam = match ? match[1] : null;
+    }
+
+    if (newView !== view || newParam !== viewParam) {
+      setView(newView);
+      setViewParam(newParam);
+    }
+  }, [location.pathname, view, viewParam]);
+
   const renderContent = () => {
     if (loading) {
       return (
@@ -297,90 +424,78 @@ function App() {
         </motion.div>
       );
     }
-    if (view === 'overview' && overview) return <Overview data={overview} onNav={navigate} archivedSeasons={archivedSeasons} onShareRecap={setRecapSeason}/>;
-    if (view === 'stats') {
-      if (!playerStats || playerStats.length === 0) {
-        return (
-          <motion.div key="stats" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="min-h-[60vh] flex items-center justify-center">
-            <div className="text-center">
-              <Flag size={48} className="text-[#D4AF37]/50 mx-auto mb-4" />
-              <h3 className="text-xl font-sans text-[#D4AF37] mb-2">No Stats Yet</h3>
-              <p className="text-[#A9C5B4] text-sm max-w-xs mx-auto">No players have started scoring rounds yet. Stats will appear once rounds are completed.</p>
-            </div>
+    return (
+      <Routes>
+        <Route path="/" element={
+          overview ? <Overview data={overview} onNav={navigate} archivedSeasons={archivedSeasons} onShareRecap={setRecapSeason}/> : null
+        } />
+        <Route path="/live" element={
+          <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
+            <LiveLeaderboard currentRound={viewParam} onRefresh={handleRefresh} mode={leaderboardMode} setMode={setLeaderboardMode} roundsVersion={roundsVersion} />
           </motion.div>
-        );
-      }
-      return (
-        <motion.div key="stats" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {playerStats.map((p,i)=><PlayerCard key={p.name} player={p} index={i}/>)}
-          </div>
-        </motion.div>
-      );
-    }
-    if (view === 'awards' && awards) {
-      return (
-        <motion.div key="awards" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
-          <Awards awards={awards}/>
-        </motion.div>
-      );
-    }
-    if (view === 'live') {
-      return (
-        <motion.div key="live" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
-          <LiveLeaderboard currentRound={viewParam} onRefresh={handleRefresh} mode={leaderboardMode} setMode={setLeaderboardMode} roundsVersion={roundsVersion} />
-        </motion.div>
-      );
-    }
-    if ((view === 'league_lb' || view === 'team_lb') && (leaderboard || teamLb)) {
-      const isTeam = view === 'team_lb';
-      const title = isTeam ? 'Team Leaderboard' : 'League Leaderboard';
-      return (
-        <motion.div key={`${view}-${roundsVersion}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
-          <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{title}</h2>
-          <DataTable data={isTeam ? teamLb?.leaderboard : leaderboard?.leaderboard}/>
-        </motion.div>
-      );
-    }
-    if (view === 'stableford' && sheetData && sheetDataMode === leaderboardMode) {
-      return (
-        <motion.div key={`${view}-${viewParam}-${leaderboardMode}-${roundsVersion}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
-          <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
-          <ErrorBoundary>
-            <GolfScorecard 
-              data={sheetData?.data}
-              title={null}
-              currentUser={user?.name}
-              jokerHole={sheetData?.joker_hole}
-              beerHole={sheetData?.beer_hole}
-              mode={leaderboardMode}
-              playerHandicaps={sheetData?.player_handicaps}
-            />
-          </ErrorBoundary>
-        </motion.div>
-      );
-    }
-    if (view === 'teams' && sheetData && sheetDataMode === leaderboardMode) {
-      return (
-        <motion.div key={`${view}-${viewParam}-${leaderboardMode}-${roundsVersion}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
-          <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
-          <TeamScorecard 
-            data={sheetData?.data}
-            title={null}
-            jokerHole={sheetData?.joker_hole}
-            beerHole={sheetData?.beer_hole}
-            mode={leaderboardMode}
-            playerHandicaps={sheetData?.player_handicaps}
-          />
-        </motion.div>
-      );
-    }
-    if (view === 'score_entry' && canScore) return <ScoreEntry key={'score-entry-' + roundsVersion} rounds={rounds} players={players} userId={user?.id} userPlayerId={profile?.player_id} currentRoundId={viewParam || currentSeason?.current_round_id} roundsVersion={roundsVersion}/>;
-    if (view === 'season_wizard') return <SeasonWizard onComplete={()=>{ loadData(); navigate('overview'); }}/>;
-    if (view === 'admin') return <AdminPanel onSeasonChanged={loadData} currentUserId={user?.id} allPlayers={players}/>;
-    if (view === 'fines' && isApprovedUser) return <Fines rounds={rounds} players={players} userId={user?.id} userPlayerId={profile?.player_id} currentRoundId={viewParam || currentSeason?.current_round_id} />;
-    if (view === 'rules') return <RulesInfo />;
-    return null;
+        } />
+        <Route path="/leaderboards/league" element={
+          (leaderboard || teamLb) ? (
+            <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">League Leaderboard</h2>
+              <DataTable data={leaderboard?.leaderboard}/>
+            </motion.div>
+          ) : null
+        } />
+        <Route path="/leaderboards/team" element={
+          (leaderboard || teamLb) ? (
+            <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">Team Leaderboard</h2>
+              <DataTable data={teamLb?.leaderboard}/>
+            </motion.div>
+          ) : null
+        } />
+        <Route path="/stats" element={
+          !playerStats || playerStats.length === 0 ? (
+            <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="min-h-[60vh] flex items-center justify-center">
+              <div className="text-center">
+                <Flag size={48} className="text-[#D4AF37]/50 mx-auto mb-4" />
+                <h3 className="text-xl font-sans text-[#D4AF37] mb-2">No Stats Yet</h3>
+                <p className="text-[#A9C5B4] text-sm max-w-xs mx-auto">No players have started scoring rounds yet. Stats will appear once rounds are completed.</p>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {playerStats.map((p,i)=><PlayerCard key={p.name} player={p} index={i}/>)}
+              </div>
+            </motion.div>
+          )
+        } />
+        <Route path="/awards" element={
+          awards ? (
+            <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
+              <Awards awards={awards}/>
+            </motion.div>
+          ) : null
+        } />
+        <Route path="/scores" element={
+          canScore ? <ScoreEntry key={'score-entry-' + roundsVersion} rounds={rounds} players={players} userId={user?.id} userPlayerId={profile?.player_id} currentRoundId={viewParam || currentSeason?.current_round_id} roundsVersion={roundsVersion}/> : null
+        } />
+        <Route path="/fines" element={
+          isApprovedUser ? <Fines rounds={rounds} players={players} userId={user?.id} userPlayerId={profile?.player_id} currentRoundId={viewParam || currentSeason?.current_round_id} /> : null
+        } />
+        <Route path="/rules" element={<RulesInfo />} />
+        <Route path="/admin" element={
+          isAdmin ? <AdminPanel onSeasonChanged={loadData} currentUserId={user?.id} allPlayers={players}/> : null
+        } />
+        <Route path="/season-wizard" element={
+          isAdmin ? <SeasonWizard onComplete={()=>{ loadData(); navigate('overview'); }}/> : null
+        } />
+        <Route path="/rounds/:roundId/scorecard" element={
+          <RoundScorecardWrapper sheetData={sheetData} sheetDataMode={sheetDataMode} leaderboardMode={leaderboardMode} roundsVersion={roundsVersion} user={user} />
+        } />
+        <Route path="/rounds/:roundId/teams" element={
+          <RoundTeamScorecardWrapper sheetData={sheetData} sheetDataMode={sheetDataMode} leaderboardMode={leaderboardMode} roundsVersion={roundsVersion} />
+        } />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
   };
 
   return (

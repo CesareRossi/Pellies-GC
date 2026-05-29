@@ -328,6 +328,13 @@ export async function getSetUpRounds() {
   return data;
 }
 
+export async function getAllRounds() {
+  const q = supabase.from('rounds').select('*, course_id, courses(*)').order('round_number');
+  const { data, error } = await withTimeout(q, 12000, 'getAllRounds');
+  if (error) throw error;
+  return data;
+}
+
 export async function createRound(round) {
   const { data, error } = await supabase.from('rounds').insert(round).select().single();
   if (error) throw error;
@@ -678,18 +685,55 @@ async function fetchHolesForRounds(rounds) {
 }
 
 export async function getLeaderboardData(mode = 'stableford') {
-  const [rounds, players, scoresRes] = await Promise.all([
-    getSetUpRounds(),
+  // Fetch all scores with pagination to handle more than 1000 rows
+  const allScores = [];
+  let from = 0;
+  const pageSize = 1000;
+  let hasMore = true;
+  while (hasMore) {
+    const { data, error } = await withTimeout(
+      supabase.from('scores').select('round_id, player_id, hole_number, strokes').range(from, from + pageSize - 1),
+      15000,
+      'scores'
+    );
+    if (error) throw error;
+    if (data && data.length > 0) {
+      allScores.push(...data);
+      from += pageSize;
+      hasMore = data.length === pageSize;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  const [rounds, players, exclusionsRes] = await Promise.all([
+    getAllRounds(),
     getPlayers(),
-    withTimeout(supabase.from('scores').select('round_id, player_id, hole_number, strokes'), 15000, 'scores'),
+    withTimeout(supabase.from('round_exclusions').select('round_id, player_id'), 10000, 'exclusions-lb'),
   ]);
-  const allScores = scoresRes.data;
   const { holesMap, roundHolesMap } = await fetchHolesForRounds(rounds);
 
+  // Filter rounds to only include those with valid course data and holes
+  const validRounds = rounds.filter(r => r.courses && r.course_id && (roundHolesMap[r.id]?.length > 0));
+
+  // Map of roundId -> Set of excluded playerIds
+  const excludedByRound = {};
+  for (const e of (exclusionsRes.data || [])) {
+    if (!excludedByRound[e.round_id]) excludedByRound[e.round_id] = new Set();
+    excludedByRound[e.round_id].add(e.player_id);
+  }
+
+  // Filter for active players only to match individual round scoring
+  const activePlayers = players.filter(p => p.is_active);
+
   const playerRoundTotals = {};
-  for (const p of players) {
+  for (const p of activePlayers) {
     playerRoundTotals[p.id] = {};
-    for (const r of rounds) {
+    for (const r of validRounds) {
+      // Skip if player is excluded from this round
+      const excludedSet = excludedByRound[r.id] || new Set();
+      if (excludedSet.has(p.id)) continue;
+
       const courseHandicap = calcCourseHandicap(p.handicap, r.courses?.slope, r.courses?.rating, r.courses?.par);
       const holes = roundHolesMap[r.id] || [];
       const handicapStrokes = distributeHandicapStrokes(courseHandicap, holes);
@@ -697,11 +741,10 @@ export async function getLeaderboardData(mode = 'stableford') {
       const pScores = (allScores || []).filter(s => s.player_id === p.id && s.round_id === r.id);
       const totalHoles = holes.length;
       const uniqueHolesScored = new Set(pScores.map(s => s.hole_number)).size;
-      const roundComplete = totalHoles > 0 && uniqueHolesScored === totalHoles;
-      
-      // Only count this round if the player has completed all holes
-      if (!roundComplete) continue;
-      
+
+      // Only count this round if the player has scored at least one hole
+      if (uniqueHolesScored === 0) continue;
+
       if (mode === 'stroke') {
         // Stroke Play: sum of strokes, with handicap adjustment on ALL rounds
         let grossStrokes = 0;
@@ -713,8 +756,8 @@ export async function getLeaderboardData(mode = 'stableford') {
           netStrokes += Math.max(0, (s.strokes || 0) - hcStrokes);
         }
         // Store net strokes for total, show gross (net) in details for all rounds
-        playerRoundTotals[p.id][r.id] = { 
-          net: netStrokes, 
+        playerRoundTotals[p.id][r.id] = {
+          net: netStrokes,
           gross: grossStrokes,
           display: `${grossStrokes} (${netStrokes})`
         };
@@ -735,7 +778,7 @@ export async function getLeaderboardData(mode = 'stableford') {
     }
   }
 
-  const leaderboard = players.map(p => {
+  const leaderboard = activePlayers.map(p => {
     const roundScores = playerRoundTotals[p.id] || {};
     const roundScoresArray = Object.values(roundScores);
     const total = roundScoresArray.reduce((a, b) => a + b.net, 0);
@@ -745,7 +788,10 @@ export async function getLeaderboardData(mode = 'stableford') {
     const roundDetails = {};
     for (const r of rounds) {
       const score = roundScores[r.id];
-      roundDetails[r.courses?.name || `Round ${r.round_number}`] = score ? score.display : (mode === 'stroke' ? '-' : 0);
+      const key = `R${r.round_number} ${r.courses?.name || 'Unknown'}`;
+      roundDetails[key] = score ? score.display : (mode === 'stroke' ? '-' : 0);
+      // Add display name for header (without round number)
+      roundDetails[`_display_${key}`] = r.courses?.name || 'Unknown';
     }
     // Return only fields needed for display (exclude internal sorting fields)
     return { player: p.name, ...roundDetails, total, _average: average, _hasScores: hasScores };
@@ -779,17 +825,39 @@ export async function getLeaderboardData(mode = 'stableford') {
 }
 
 export async function getTeamLeaderboardData(mode = 'stableford') {
-  const [rounds, players, teamsRes, scoresRes, exclusionsRes] = await Promise.all([
-    getSetUpRounds(),
+  // Fetch all scores with pagination to handle more than 1000 rows
+  const allScores = [];
+  let from = 0;
+  const pageSize = 1000;
+  let hasMore = true;
+  while (hasMore) {
+    const { data, error } = await withTimeout(
+      supabase.from('scores').select('round_id, player_id, hole_number, strokes').range(from, from + pageSize - 1),
+      15000,
+      'scores-team'
+    );
+    if (error) throw error;
+    if (data && data.length > 0) {
+      allScores.push(...data);
+      from += pageSize;
+      hasMore = data.length === pageSize;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  const [rounds, players, teamsRes, exclusionsRes] = await Promise.all([
+    getAllRounds(),
     getPlayers(),
     withTimeout(supabase.from('teams')
       .select('*, player1:players!teams_player1_id_fkey(id, name, handicap), player2:players!teams_player2_id_fkey(id, name, handicap)'), 15000, 'teams'),
-    withTimeout(supabase.from('scores').select('round_id, player_id, hole_number, strokes'), 15000, 'scores-team'),
     withTimeout(supabase.from('round_exclusions').select('round_id, player_id'), 10000, 'exclusions-team'),
   ]);
   const allTeams = teamsRes.data;
-  const allScores = scoresRes.data;
   const { holesMap, roundHolesMap } = await fetchHolesForRounds(rounds);
+
+  // Filter rounds to only include those with valid course data and holes
+  const validRounds = rounds.filter(r => r.courses && r.course_id && (roundHolesMap[r.id]?.length > 0));
 
   // Map of roundId -> Set of excluded playerIds
   const excludedByRound = {};
@@ -798,14 +866,17 @@ export async function getTeamLeaderboardData(mode = 'stableford') {
     excludedByRound[e.round_id].add(e.player_id);
   }
 
+  // Filter for active players only to match individual round scoring
+  const activePlayers = players.filter(p => p.is_active);
+
   const playerMap = {};
-  for (const p of players) playerMap[p.id] = p;
+  for (const p of activePlayers) playerMap[p.id] = p;
 
   const strokeMap = {}; // For stroke play: stores gross strokes per player per hole
   const stabMap = {}; // For stableford: stores points per player per hole
   const hcCache = {}; // key: roundId_playerId
 
-  const roundMap = Object.fromEntries(rounds.map(r => [r.id, r]));
+  const roundMap = Object.fromEntries(validRounds.map(r => [r.id, r]));
 
   for (const s of allScores || []) {
     const hole = holesMap[`${s.round_id}_${s.hole_number}`];
@@ -858,7 +929,7 @@ export async function getTeamLeaderboardData(mode = 'stableford') {
     if (!teamPairsMap[key]) teamPairsMap[key] = { name: `${t.player1?.name} and ${t.player2?.name}`, p1Id: t.player1?.id, p2Id: t.player2?.id, roundIds: new Set() };
     teamPairsMap[key].roundIds.add(roundId);
   };
-  for (const r of rounds) {
+  for (const r of validRounds) {
     if (roundsWithSpecific.has(r.id)) {
       for (const t of perRoundTeams.filter(x => x.round_id === r.id)) addTeam(t, r.id);
     } else {
@@ -871,7 +942,7 @@ export async function getTeamLeaderboardData(mode = 'stableford') {
     let totalNet = 0;
     let totalGross = 0;
     let roundsPlayed = 0;
-    for (const r of rounds) {
+    for (const r of validRounds) {
       if (!team.roundIds.has(r.id)) { 
         roundScores[r.courses?.name || `R${r.round_number}`] = mode === 'stroke' ? '-' : 0; 
         continue; 
@@ -883,14 +954,12 @@ export async function getTeamLeaderboardData(mode = 'stableford') {
       const p1Excluded = excludedSet.has(team.p1Id);
       const p2Excluded = excludedSet.has(team.p2Id);
 
-      // Check if BOTH non-excluded players have completed all holes for this round
-      const p1HolesScored = p1Excluded ? holes.length : holes.filter(h => strokeMap[`${r.id}_${team.p1Id}_${h.hole_number}`] || stabMap[`${r.id}_${team.p1Id}_${h.hole_number}`]).length;
-      const p2HolesScored = p2Excluded ? holes.length : holes.filter(h => strokeMap[`${r.id}_${team.p2Id}_${h.hole_number}`] || stabMap[`${r.id}_${team.p2Id}_${h.hole_number}`]).length;
-      const totalHoles = holes.length;
-      const roundComplete = totalHoles > 0 && p1HolesScored === totalHoles && p2HolesScored === totalHoles;
-
-      // Only count this round if both non-excluded players have completed all holes
-      if (!roundComplete) {
+      // Check if at least one non-excluded player has scored any holes for this round
+      const p1HolesScored = p1Excluded ? 0 : holes.filter(h => strokeMap[`${r.id}_${team.p1Id}_${h.hole_number}`] || stabMap[`${r.id}_${team.p1Id}_${h.hole_number}`]).length;
+      const p2HolesScored = p2Excluded ? 0 : holes.filter(h => strokeMap[`${r.id}_${team.p2Id}_${h.hole_number}`] || stabMap[`${r.id}_${team.p2Id}_${h.hole_number}`]).length;
+      
+      // Only count this round if at least one non-excluded player has scored
+      if (p1HolesScored === 0 && p2HolesScored === 0) {
         roundScores[r.courses?.name || `R${r.round_number}`] = mode === 'stroke' ? '-' : 0;
         continue;
       }
@@ -924,9 +993,15 @@ export async function getTeamLeaderboardData(mode = 'stableford') {
       
       if (mode === 'stroke') {
         // Show gross (net) for all rounds in stroke play
-        roundScores[r.courses?.name || `R${r.round_number}`] = `${roundGross} (${roundNet})`;
+        const key = `R${r.round_number} ${r.courses?.name || 'Unknown'}`;
+        roundScores[key] = `${roundGross} (${roundNet})`;
+        // Add display name for header (without round number)
+        roundScores[`_display_${key}`] = r.courses?.name || 'Unknown';
       } else {
-        roundScores[r.courses?.name || `R${r.round_number}`] = roundNet;
+        const key = `R${r.round_number} ${r.courses?.name || 'Unknown'}`;
+        roundScores[key] = roundNet;
+        // Add display name for header (without round number)
+        roundScores[`_display_${key}`] = r.courses?.name || 'Unknown';
       }
       
       totalNet += roundNet;
@@ -985,12 +1060,31 @@ export async function getTeamLeaderboardData(mode = 'stableford') {
 }
 
 export async function getPlayerStats() {
-  const [players, rounds, scoresRes] = await Promise.all([
+  // Fetch all scores with pagination to handle more than 1000 rows
+  const allScores = [];
+  let from = 0;
+  const pageSize = 1000;
+  let hasMore = true;
+  while (hasMore) {
+    const { data, error } = await withTimeout(
+      supabase.from('scores').select('round_id, player_id, hole_number, strokes').range(from, from + pageSize - 1),
+      15000,
+      'scores-stats'
+    );
+    if (error) throw error;
+    if (data && data.length > 0) {
+      allScores.push(...data);
+      from += pageSize;
+      hasMore = data.length === pageSize;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  const [players, rounds] = await Promise.all([
     getPlayers(),
-    getSetUpRounds(),
-    withTimeout(supabase.from('scores').select('round_id, player_id, hole_number, strokes'), 15000, 'scores-stats'),
+    getAllRounds(),
   ]);
-  const allScores = scoresRes.data;
   const { holesMap, roundHolesMap } = await fetchHolesForRounds(rounds);
 
   const roundCourseMap = {};
@@ -1064,13 +1158,32 @@ export async function getPlayerStats() {
 // ===== FUN AWARDS =====
 // Computes per-round awards grouped by round/course, plus season summaries.
 export async function getAwards() {
-  const [players, rounds, scoresRes, exclusionsRes] = await Promise.all([
+  // Fetch all scores with pagination to handle more than 1000 rows
+  const allScores = [];
+  let from = 0;
+  const pageSize = 1000;
+  let hasMore = true;
+  while (hasMore) {
+    const { data, error } = await withTimeout(
+      supabase.from('scores').select('round_id, player_id, hole_number, strokes').range(from, from + pageSize - 1),
+      15000,
+      'scores-awards'
+    );
+    if (error) throw error;
+    if (data && data.length > 0) {
+      allScores.push(...data);
+      from += pageSize;
+      hasMore = data.length === pageSize;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  const [players, rounds, exclusionsRes] = await Promise.all([
     getAllPlayers(),
-    getSetUpRounds(),
-    withTimeout(supabase.from('scores').select('round_id, player_id, hole_number, strokes'), 15000, 'scores-awards'),
+    getAllRounds(),
     withTimeout(supabase.from('round_exclusions').select('round_id, player_id'), 10000, 'exclusions'),
   ]);
-  const allScores = scoresRes.data || [];
 
   // If no scores, return empty awards
   if (allScores.length === 0) {
@@ -1343,12 +1456,12 @@ export async function getAwards() {
 export async function getSeasonOverview() {
   // Parallelize all heavy fetches instead of awaiting sequentially (was ~20 sequential DB calls)
   const [allRounds, allPlayers, stats, lbRes, teamLbRes, scoresRes] = await Promise.all([
-    getSetUpRounds(),
+    getAllRounds(),
     getPlayers(),
     getPlayerStats(),
     getLeaderboardData(),
     getTeamLeaderboardData(),
-    supabase.from('scores').select('player_id').limit(1000),
+    supabase.from('scores').select('player_id')
   ]);
   const { leaderboard, rounds } = lbRes;
   const { leaderboard: teamLb } = teamLbRes;
