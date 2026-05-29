@@ -19,7 +19,9 @@ const Fines = ({ rounds, players, userId, userPlayerId = null, currentRoundId = 
   const [fines, setFines] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [settlingId, setSettlingId] = useState(null);
   const hasSetDefaults = useRef(false);
+  const finesListRef = useRef(null);
 
   // Get live round (is_current flag or currentRoundId match)
   const liveRound = useMemo(() => {
@@ -58,16 +60,17 @@ const Fines = ({ rounds, players, userId, userPlayerId = null, currentRoundId = 
     }
   }, [userPlayerId, players, selectedPlayer]);
 
-  const loadFines = useCallback(async () => {
+  const loadFines = useCallback(async ({ silent = false } = {}) => {
     if (!selectedRound) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const data = await db.getFinesForRound(parseInt(selectedRound));
       setFines(data);
+      setError('');
     } catch (e) {
       setError('Failed to load fines');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [selectedRound]);
 
@@ -81,59 +84,89 @@ const Fines = ({ rounds, players, userId, userPlayerId = null, currentRoundId = 
       return;
     }
     try {
-      await db.addFine({
+      const created = await db.addFine({
         round_id: parseInt(selectedRound),
         player_id: parseInt(selectedPlayer),
         fine_type: fineType,
         settled: false,
       });
-      await loadFines();
+      const player = players.find(p => p.id === parseInt(selectedPlayer));
+      setFines(prev => [{ ...created, players: { name: player?.name || 'Unknown' } }, ...prev]);
+      setError('');
     } catch (e) {
       setError('Failed to add fine');
     }
   };
 
   const removeFine = async (fineId) => {
+    setFines(prev => prev.filter(f => f.id !== fineId));
+    setError('');
     try {
       await db.deleteFine(fineId);
-      await loadFines();
     } catch (e) {
+      await loadFines({ silent: true });
       setError('Failed to remove fine');
     }
   };
 
   const settleFine = async (fineId, settled) => {
+    const previous = fines.find(f => f.id === fineId);
+    if (!previous || settlingId === fineId) return;
+
+    setSettlingId(fineId);
+    setError('');
+    setFines(prev => prev.map(f => (f.id === fineId ? { ...f, settled } : f)));
+
     try {
       await db.settleFine(fineId, settled);
-      await loadFines();
     } catch (e) {
+      setFines(prev => prev.map(f => (f.id === fineId ? { ...f, settled: previous.settled } : f)));
       setError('Failed to update fine');
+    } finally {
+      setSettlingId(null);
     }
   };
 
-  // Calculate summary
-  const summary = {};
-  fines.forEach(fine => {
-    const playerName = fine.players?.name || 'Unknown';
-    if (!summary[playerName]) {
-      summary[playerName] = { shots: 0, beers: 0, total: 0, fines: [] };
+  const { sortedFines, summaryEntries } = useMemo(() => {
+    const summary = {};
+    for (const fine of fines) {
+      const playerName = fine.players?.name || 'Unknown';
+      if (!summary[playerName]) {
+        summary[playerName] = { shots: 0, beers: 0, total: 0, fines: [] };
+      }
+      summary[playerName].total++;
+      summary[playerName].fines.push(fine);
+      switch (fine.fine_type) {
+        case 'ThreePutt':
+        case 'BunkerToBunker':
+        case 'RestingOnClub':
+        case 'Shank':
+        case 'NotPastLadies':
+        case 'SandSpecialist':
+          summary[playerName].shots += 1;
+          break;
+        case 'FourPutt':
+          summary[playerName].beers += 1;
+          break;
+        default:
+          break;
+      }
     }
-    summary[playerName].total++;
-    summary[playerName].fines.push(fine);
-    switch (fine.fine_type) {
-      case 'ThreePutt':
-      case 'BunkerToBunker':
-      case 'RestingOnClub':
-      case 'Shank':
-      case 'NotPastLadies':
-      case 'SandSpecialist':
-        summary[playerName].shots += 1;
-        break;
-      case 'FourPutt':
-        summary[playerName].beers += 1;
-        break;
-    }
-  });
+
+    const sortedFines = [...fines].sort((a, b) => {
+      const nameA = a.players?.name || 'Unknown';
+      const nameB = b.players?.name || 'Unknown';
+      const byName = nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+      if (byName !== 0) return byName;
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return tb - ta;
+    });
+
+    const summaryEntries = Object.entries(summary).sort(([, a], [, b]) => b.total - a.total);
+
+    return { sortedFines, summaryEntries };
+  }, [fines]);
 
   const selectedRoundData = rounds.find(r => r.id === parseInt(selectedRound));
   const isRoundClosed = selectedRoundData?.is_closed;
@@ -225,7 +258,7 @@ const Fines = ({ rounds, players, userId, userPlayerId = null, currentRoundId = 
       )}
 
       {/* Summary - Shows first */}
-      {selectedRound && Object.keys(summary).length > 0 && (
+      {selectedRound && summaryEntries.length > 0 && (
         <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md overflow-hidden mb-6">
           <div className="bg-[#051A10] border-b border-[#D4AF37]/30 px-4 py-3">
             <h3 className="text-sm font-semibold text-[#D4AF37] uppercase tracking-wider">
@@ -233,7 +266,7 @@ const Fines = ({ rounds, players, userId, userPlayerId = null, currentRoundId = 
             </h3>
           </div>
           <div className="divide-y divide-[#D4AF37]/10">
-            {Object.entries(summary).map(([playerName, data]) => (
+            {summaryEntries.map(([playerName, data]) => (
               <div key={playerName} className="flex items-center justify-between px-4 py-3">
                 <span className="text-white font-medium">{playerName}</span>
                 <div className="flex items-center gap-4 text-sm">
@@ -270,13 +303,14 @@ const Fines = ({ rounds, players, userId, userPlayerId = null, currentRoundId = 
               <p className="text-[#A9C5B4]">No fines yet. Be good... or be good at it!</p>
             </div>
           ) : (
-            <div className="divide-y divide-[#D4AF37]/10">
-              {fines.map(fine => {
+            <div ref={finesListRef} className="divide-y divide-[#D4AF37]/10 max-h-[min(60vh,28rem)] overflow-y-auto">
+              {sortedFines.map(fine => {
                 const type = FINE_TYPES.find(t => t.id === fine.fine_type);
+                const isSettling = settlingId === fine.id;
                 return (
                   <div
                     key={fine.id}
-                    className={`flex items-center justify-between px-4 py-3 ${fine.settled ? 'opacity-50' : ''}`}
+                    className={`flex items-center justify-between px-4 py-3 transition-opacity ${fine.settled ? 'opacity-50' : ''} ${isSettling ? 'opacity-70' : ''}`}
                   >
                     <div className="flex items-center gap-3">
                       <span className="text-[#D4AF37]">{type?.icon || <Skull size={20} />}</span>
@@ -287,18 +321,22 @@ const Fines = ({ rounds, players, userId, userPlayerId = null, currentRoundId = 
                     </div>
                     <div className="flex items-center gap-2">
                       <button
+                        type="button"
                         onClick={() => settleFine(fine.id, !fine.settled)}
-                        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                        disabled={isSettling}
+                        className={`min-w-[4.5rem] px-2 py-1 rounded text-xs font-medium transition-colors disabled:cursor-wait ${
                           fine.settled
                             ? 'bg-emerald-500/20 text-emerald-400'
                             : 'bg-amber-500/20 text-amber-400'
                         }`}
                       >
-                        {fine.settled ? 'Settled' : 'Pending'}
+                        {isSettling ? '…' : fine.settled ? 'Settled' : 'Pending'}
                       </button>
                       <button
+                        type="button"
                         onClick={() => removeFine(fine.id)}
-                        className="p-1 text-[#A9C5B4] hover:text-red-400 transition-colors"
+                        disabled={isSettling}
+                        className="p-1 text-[#A9C5B4] hover:text-red-400 transition-colors disabled:opacity-40"
                       >
                         <Trash size={16} />
                       </button>

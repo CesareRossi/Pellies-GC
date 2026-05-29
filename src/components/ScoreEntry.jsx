@@ -12,7 +12,7 @@ const ScoreEntry = ({ rounds, players, userId, userPlayerId = null, currentRound
   const [selectedHole, setSelectedHole] = useState(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
-  const [excludedPlayers, setExcludedPlayers] = useState(new Set());
+  const [includedPlayers, setIncludedPlayers] = useState(new Set());
   const hasSetDefaults = useRef(false);
 
   // Get live round (is_current flag or currentRoundId match)
@@ -57,14 +57,14 @@ const ScoreEntry = ({ rounds, players, userId, userPlayerId = null, currentRound
     if (!selectedRound) return;
     setHolesLoading(true);
     setHoles([]);
-    setExcludedPlayers(new Set());
+    setIncludedPlayers(new Set());
 
     Promise.all([
       db.getHolesForRound(selectedRound),
-      db.getRoundExclusions(selectedRound)
-    ]).then(([holesData, exclusionIds]) => {
+      db.getRoundParticipants(selectedRound)
+    ]).then(([holesData, participantIds]) => {
       setHoles(holesData || []);
-      setExcludedPlayers(new Set(exclusionIds || []));
+      setIncludedPlayers(new Set(participantIds || []));
     }).catch(() => {
       setHoles([]);
     }).finally(() => {
@@ -143,7 +143,7 @@ const ScoreEntry = ({ rounds, players, userId, userPlayerId = null, currentRound
           <label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Player</label>
           <select value={selectedPlayer || ''} onChange={e => setSelectedPlayer(e.target.value)} className="w-full px-4 py-3 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white focus:outline-none text-sm">
             <option value="">Choose player...</option>
-            {players.filter(p => !excludedPlayers.has(p.id)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {players.filter(p => includedPlayers.has(p.id)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
       </div>

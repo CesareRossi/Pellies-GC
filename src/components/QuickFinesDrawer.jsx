@@ -25,7 +25,7 @@ const QuickFinesDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [excludedPlayers, setExcludedPlayers] = useState(new Set());
+  const [includedPlayers, setIncludedPlayers] = useState(new Set());
   const [roundClosed, setRoundClosed] = useState(false);
   const [addingFine, setAddingFine] = useState(null); // Track which fine is being added
 
@@ -87,7 +87,7 @@ const QuickFinesDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
   useEffect(() => {
     if (!selectedRound) {
       setRoundClosed(false);
-      setExcludedPlayers(new Set());
+      setIncludedPlayers(new Set());
       setFines([]);
       setLoading(false);
       return;
@@ -98,10 +98,10 @@ const QuickFinesDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
     setLoading(true);
     
     Promise.all([
-      db.getRoundExclusions(selectedRound),
+      db.getRoundParticipants(selectedRound),
       db.getFinesForRound(parseInt(selectedRound))
-    ]).then(([exclusionIds, finesData]) => {
-      setExcludedPlayers(new Set(exclusionIds || []));
+    ]).then(([participantIds, finesData]) => {
+      setIncludedPlayers(new Set(participantIds || []));
       setFines(finesData || []);
     }).catch(() => {
       setFines([]);
@@ -168,7 +168,7 @@ const QuickFinesDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
   };
 
 
-  const availablePlayers = players.filter(p => !excludedPlayers.has(p.id));
+  const availablePlayers = players.filter(p => includedPlayers.has(p.id));
 
   if (!isOpen) return null;
 

@@ -361,9 +361,8 @@ export async function deleteRound(id) {
   if (error) throw new Error(`Failed to delete round: ${error.message}`);
 }
 
-// ===== ROUND EXCLUSIONS (v7) =====
-// Mark players who didn't compete in a specific round so the season
-// completion gate and awards treat them correctly.
+// ===== ROUND PARTICIPANTS (v7) =====
+// UI selects who played; persisted as round_exclusions (players who did NOT play).
 export async function getRoundExclusions(roundId) {
   const { data, error } = await supabase.from('round_exclusions').select('player_id').eq('round_id', roundId);
   if (error) throw error;
@@ -384,6 +383,65 @@ export async function setPlayerExcluded(roundId, playerId, excluded) {
     const { error } = await supabase.from('round_exclusions').delete().eq('round_id', roundId).eq('player_id', playerId);
     if (error) throw error;
   }
+}
+
+export async function getRoundInclusions(roundId) {
+  return getRoundParticipants(roundId);
+}
+
+export async function getAllRoundInclusions() {
+  const [exclusions, players] = await Promise.all([getAllRoundExclusions(), getPlayers()]);
+  if (!exclusions.length) return [];
+  const activeIds = players.filter(p => p.is_active).map(p => p.id);
+  const excludedByRound = {};
+  for (const row of exclusions) {
+    if (!excludedByRound[row.round_id]) excludedByRound[row.round_id] = new Set();
+    excludedByRound[row.round_id].add(row.player_id);
+  }
+  const rows = [];
+  for (const [roundId, excluded] of Object.entries(excludedByRound)) {
+    for (const playerId of activeIds) {
+      if (!excluded.has(playerId)) rows.push({ round_id: Number(roundId), player_id: playerId });
+    }
+  }
+  return rows;
+}
+
+export async function setPlayerIncluded(roundId, playerId, included) {
+  return setPlayerExcluded(roundId, playerId, !included);
+}
+
+// Who played: active players minus round_exclusions. No exclusions row = everyone active played (legacy).
+export async function getRoundParticipants(roundId) {
+  const players = await getPlayers();
+  const activeIds = players.filter(p => p.is_active).map(p => p.id);
+  const exclusions = await getRoundExclusions(roundId).catch(() => []);
+  if (exclusions.length === 0) return activeIds;
+  const excluded = new Set(exclusions);
+  return activeIds.filter(id => !excluded.has(id));
+}
+
+function buildIncludedByRound(rounds, exclusionRows, activePlayerIds) {
+  const excludedByRound = {};
+  for (const row of exclusionRows || []) {
+    if (!excludedByRound[row.round_id]) excludedByRound[row.round_id] = new Set();
+    excludedByRound[row.round_id].add(row.player_id);
+  }
+  const result = {};
+  for (const r of rounds) {
+    const exc = excludedByRound[r.id];
+    if (exc?.size) {
+      result[r.id] = new Set(activePlayerIds.filter(id => !exc.has(id)));
+    } else {
+      result[r.id] = new Set(activePlayerIds);
+    }
+  }
+  return result;
+}
+
+function isPlayerIncluded(includedByRound, roundId, playerId) {
+  const set = includedByRound[roundId];
+  return set ? set.has(playerId) : false;
 }
 
 // Admin: clear scores for a single round (keeps the round + holes + teams)
@@ -716,23 +774,15 @@ export async function getLeaderboardData(mode = 'stableford') {
   // Filter rounds to only include those with valid course data and holes
   const validRounds = rounds.filter(r => r.courses && r.course_id && (roundHolesMap[r.id]?.length > 0));
 
-  // Map of roundId -> Set of excluded playerIds
-  const excludedByRound = {};
-  for (const e of (exclusionsRes.data || [])) {
-    if (!excludedByRound[e.round_id]) excludedByRound[e.round_id] = new Set();
-    excludedByRound[e.round_id].add(e.player_id);
-  }
-
-  // Filter for active players only to match individual round scoring
   const activePlayers = players.filter(p => p.is_active);
+  const activePlayerIds = activePlayers.map(p => p.id);
+  const includedByRound = buildIncludedByRound(validRounds, exclusionsRes.data || [], activePlayerIds);
 
   const playerRoundTotals = {};
   for (const p of activePlayers) {
     playerRoundTotals[p.id] = {};
     for (const r of validRounds) {
-      // Skip if player is excluded from this round
-      const excludedSet = excludedByRound[r.id] || new Set();
-      if (excludedSet.has(p.id)) continue;
+      if (!isPlayerIncluded(includedByRound, r.id, p.id)) continue;
 
       const courseHandicap = calcCourseHandicap(p.handicap, r.courses?.slope, r.courses?.rating, r.courses?.par);
       const holes = roundHolesMap[r.id] || [];
@@ -789,7 +839,7 @@ export async function getLeaderboardData(mode = 'stableford') {
     for (const r of rounds) {
       const score = roundScores[r.id];
       const key = `R${r.round_number} ${r.courses?.name || 'Unknown'}`;
-      roundDetails[key] = score ? score.display : (mode === 'stroke' ? '-' : 0);
+      roundDetails[key] = score ? score.display : '-';
       // Add display name for header (without round number)
       roundDetails[`_display_${key}`] = r.courses?.name || 'Unknown';
     }
@@ -859,15 +909,9 @@ export async function getTeamLeaderboardData(mode = 'stableford') {
   // Filter rounds to only include those with valid course data and holes
   const validRounds = rounds.filter(r => r.courses && r.course_id && (roundHolesMap[r.id]?.length > 0));
 
-  // Map of roundId -> Set of excluded playerIds
-  const excludedByRound = {};
-  for (const e of (exclusionsRes.data || [])) {
-    if (!excludedByRound[e.round_id]) excludedByRound[e.round_id] = new Set();
-    excludedByRound[e.round_id].add(e.player_id);
-  }
-
-  // Filter for active players only to match individual round scoring
   const activePlayers = players.filter(p => p.is_active);
+  const activePlayerIds = activePlayers.map(p => p.id);
+  const includedByRound = buildIncludedByRound(validRounds, exclusionsRes.data || [], activePlayerIds);
 
   const playerMap = {};
   for (const p of activePlayers) playerMap[p.id] = p;
@@ -944,23 +988,20 @@ export async function getTeamLeaderboardData(mode = 'stableford') {
     let roundsPlayed = 0;
     for (const r of validRounds) {
       if (!team.roundIds.has(r.id)) { 
-        roundScores[r.courses?.name || `R${r.round_number}`] = mode === 'stroke' ? '-' : 0; 
+        roundScores[r.courses?.name || `R${r.round_number}`] = '-';
         continue; 
       }
       const holes = roundHolesMap[r.id] || [];
 
-      // Check which players are excluded from this round
-      const excludedSet = excludedByRound[r.id] || new Set();
-      const p1Excluded = excludedSet.has(team.p1Id);
-      const p2Excluded = excludedSet.has(team.p2Id);
+      const p1Included = isPlayerIncluded(includedByRound, r.id, team.p1Id);
+      const p2Included = isPlayerIncluded(includedByRound, r.id, team.p2Id);
 
-      // Check if at least one non-excluded player has scored any holes for this round
-      const p1HolesScored = p1Excluded ? 0 : holes.filter(h => strokeMap[`${r.id}_${team.p1Id}_${h.hole_number}`] || stabMap[`${r.id}_${team.p1Id}_${h.hole_number}`]).length;
-      const p2HolesScored = p2Excluded ? 0 : holes.filter(h => strokeMap[`${r.id}_${team.p2Id}_${h.hole_number}`] || stabMap[`${r.id}_${team.p2Id}_${h.hole_number}`]).length;
+      const p1HolesScored = p1Included ? holes.filter(h => strokeMap[`${r.id}_${team.p1Id}_${h.hole_number}`] || stabMap[`${r.id}_${team.p1Id}_${h.hole_number}`]).length : 0;
+      const p2HolesScored = p2Included ? holes.filter(h => strokeMap[`${r.id}_${team.p2Id}_${h.hole_number}`] || stabMap[`${r.id}_${team.p2Id}_${h.hole_number}`]).length : 0;
       
-      // Only count this round if at least one non-excluded player has scored
+      // Only count this round if at least one included player has scored
       if (p1HolesScored === 0 && p2HolesScored === 0) {
-        roundScores[r.courses?.name || `R${r.round_number}`] = mode === 'stroke' ? '-' : 0;
+        roundScores[r.courses?.name || `R${r.round_number}`] = '-';
         continue;
       }
 
@@ -971,21 +1012,18 @@ export async function getTeamLeaderboardData(mode = 'stableford') {
         const p2key = `${r.id}_${team.p2Id}_${h.hole_number}`;
 
         if (mode === 'stroke') {
-          // Stroke Play: Best ball (lowest net strokes) - only consider non-excluded players
-          const p1 = p1Excluded ? null : strokeMap[p1key];
-          const p2 = p2Excluded ? null : strokeMap[p2key];
+          const p1 = p1Included ? strokeMap[p1key] : null;
+          const p2 = p2Included ? strokeMap[p2key] : null;
           const p1net = p1?.net ?? 999;
           const p2net = p2?.net ?? 999;
           const p1gross = p1?.gross ?? 999;
           const p2gross = p2?.gross ?? 999;
 
-          // Take the best (lowest) net score between the non-excluded players
           roundNet += Math.min(p1net, p2net);
           roundGross += Math.min(p1gross, p2gross);
         } else {
-          // Stableford: Best ball (highest points) - only consider non-excluded players
-          const p1pts = p1Excluded ? -1 : (stabMap[p1key] || 0);
-          const p2pts = p2Excluded ? -1 : (stabMap[p2key] || 0);
+          const p1pts = p1Included ? (stabMap[p1key] || 0) : -1;
+          const p2pts = p2Included ? (stabMap[p2key] || 0) : -1;
           roundNet += Math.max(p1pts, p2pts);
           roundGross += Math.max(p1pts, p2pts);
         }
@@ -1044,8 +1082,8 @@ export async function getTeamLeaderboardData(mode = 'stableford') {
     teamLeaderboard.sort((a, b) => {
       const aRoundKeys = Object.keys(a).filter(k => k !== 'player' && k !== 'total');
       const bRoundKeys = Object.keys(b).filter(k => k !== 'player' && k !== 'total');
-      const aHasScores = aRoundKeys.some(k => a[k] !== '-' && a[k] !== 0 && typeof a[k] === 'number' && a[k] > 0);
-      const bHasScores = bRoundKeys.some(k => b[k] !== '-' && b[k] !== 0 && typeof b[k] === 'number' && b[k] > 0);
+      const aHasScores = aRoundKeys.some(k => a[k] !== '-' && typeof a[k] === 'number');
+      const bHasScores = bRoundKeys.some(k => b[k] !== '-' && typeof b[k] === 'number');
       // Teams with scores come first
       if (aHasScores && !bHasScores) return -1;
       if (!aHasScores && bHasScores) return 1;
@@ -1202,12 +1240,9 @@ export async function getAwards() {
       },
     };
   }
-  // Map of roundId -> Set of excluded playerIds
-  const excludedByRound = {};
-  for (const e of (exclusionsRes.data || [])) {
-    if (!excludedByRound[e.round_id]) excludedByRound[e.round_id] = new Set();
-    excludedByRound[e.round_id].add(e.player_id);
-  }
+  const activePlayerIds = players.filter(p => p.is_active).map(p => p.id);
+  const activePlayerIdSet = new Set(activePlayerIds);
+  const includedByRound = buildIncludedByRound(rounds, exclusionsRes.data || [], activePlayerIds);
   const { holesMap, roundHolesMap } = await fetchHolesForRounds(rounds);
   const nameById = Object.fromEntries(players.map(p => [p.id, p.name]));
 
@@ -1243,9 +1278,8 @@ export async function getAwards() {
   // For each round, compute each award winner
   const perRoundAwards = [];
   for (const r of rounds) {
-    const excludedSet = excludedByRound[r.id] || new Set();
     const entrants = players
-      .filter(p => p.is_active && !excludedSet.has(p.id))
+      .filter(p => p.is_active && isPlayerIncluded(includedByRound, r.id, p.id))
       .map(p => ({ playerId: p.id, name: p.name, ...perPR[p.id]?.[r.id] }))
       .filter(e => e.total != null);
     if (entrants.length === 0) {
@@ -1274,8 +1308,7 @@ export async function getAwards() {
     // 🍺 Beer Hole — worst strokes on the designated beer hole (everyone tied is liable)
     let beer = null;
     if (r.beer_hole) {
-      const activePlayerIds = new Set(players.filter(p => p.is_active).map(p => p.id));
-      const scoresOnHole = allScores.filter(s => s.round_id === r.id && s.hole_number === r.beer_hole && !excludedSet.has(s.player_id) && activePlayerIds.has(s.player_id));
+      const scoresOnHole = allScores.filter(s => s.round_id === r.id && s.hole_number === r.beer_hole && isPlayerIncluded(includedByRound, r.id, s.player_id) && activePlayerIdSet.has(s.player_id));
       if (scoresOnHole.length > 0) {
         const worstStrokes = Math.max(...scoresOnHole.map(s => s.strokes));
         const tied = scoresOnHole.filter(s => s.strokes === worstStrokes).map(s => nameById[s.player_id] || '?');
@@ -1289,8 +1322,7 @@ export async function getAwards() {
       const holesForRound = roundHolesMap[r.id] || [];
       const hole = holesForRound.find(h => h.hole_number === r.joker_hole);
       if (hole) {
-        const activePlayerIds = new Set(players.filter(p => p.is_active).map(p => p.id));
-        const jokerScores = allScores.filter(s => s.round_id === r.id && s.hole_number === r.joker_hole && !excludedSet.has(s.player_id) && activePlayerIds.has(s.player_id));
+        const jokerScores = allScores.filter(s => s.round_id === r.id && s.hole_number === r.joker_hole && isPlayerIncluded(includedByRound, r.id, s.player_id) && activePlayerIdSet.has(s.player_id));
         let best = null;
         for (const s of jokerScores) {
           const player = players.find(p => p.id === s.player_id);
@@ -1311,7 +1343,7 @@ export async function getAwards() {
       beer_hole: r.beer_hole,
       joker_hole: r.joker_hole,
       has_scores: true,
-      excluded: [...(excludedByRound[r.id] || [])].map(id => nameById[id] || '?'),
+      excluded: players.filter(p => p.is_active && !isPlayerIncluded(includedByRound, r.id, p.id)).map(p => p.name),
       wooden_spoon: { player: spoon.name, points: spoon.total },
       freeze: { player: freeze.name, drop: freeze.front - freeze.back },
       heater: { player: heater.name, gain: heater.back - heater.front },
@@ -1325,11 +1357,9 @@ export async function getAwards() {
   // ===== SEASON SUMMARIES =====
   // Season-wide beer-hole tally: how many times each player bought drinks (ties all count)
   const beerTally = {};
-  const activePlayerIds = new Set(players.filter(p => p.is_active).map(p => p.id));
   for (const r of rounds) {
     if (!r.beer_hole) continue;
-    const excludedSet = excludedByRound[r.id] || new Set();
-    const scoresOnHole = allScores.filter(s => s.round_id === r.id && s.hole_number === r.beer_hole && !excludedSet.has(s.player_id) && activePlayerIds.has(s.player_id));
+    const scoresOnHole = allScores.filter(s => s.round_id === r.id && s.hole_number === r.beer_hole && isPlayerIncluded(includedByRound, r.id, s.player_id) && activePlayerIdSet.has(s.player_id));
     if (scoresOnHole.length === 0) continue;
     const worstStrokes = Math.max(...scoresOnHole.map(s => s.strokes));
     for (const s of scoresOnHole) {
@@ -1346,11 +1376,10 @@ export async function getAwards() {
   const jokerTotalBonus = {}; // playerId -> { totalBonus, rounds[] }
   for (const r of rounds) {
     if (!r.joker_hole) continue;
-    const excludedSet = excludedByRound[r.id] || new Set();
     const holesForRound = roundHolesMap[r.id] || [];
     const hole = holesForRound.find(h => h.hole_number === r.joker_hole);
     if (!hole) continue;
-    const jokerScores = allScores.filter(s => s.round_id === r.id && s.hole_number === r.joker_hole && !excludedSet.has(s.player_id));
+    const jokerScores = allScores.filter(s => s.round_id === r.id && s.hole_number === r.joker_hole && isPlayerIncluded(includedByRound, r.id, s.player_id));
     for (const s of jokerScores) {
       const player = players.find(p => p.id === s.player_id);
       if (!player) continue;
@@ -1405,9 +1434,7 @@ export async function getAwards() {
     let totalPoints = 0;
     let roundsPlayed = 0;
     for (const r of rounds) {
-      const excludedSet = excludedByRound[r.id] || new Set();
-      // Skip excluded rounds entirely - they don't count toward average
-      if (excludedSet.has(p.id)) continue;
+      if (!isPlayerIncluded(includedByRound, r.id, p.id)) continue;
       const d = perPR[p.id]?.[r.id];
       if (d) {
         totalPoints += d.total;
@@ -1427,15 +1454,16 @@ export async function getAwards() {
   const spoonSorted = Object.values(spoonAverages).sort((a, b) => a.average - b.average);
   const woodenSpoonWinner = spoonSorted.length > 0 ? spoonSorted.filter(p => p.average === spoonSorted[0].average) : [];
 
-  // Season completion (honouring exclusions)
-  const activePlayerCount = players.length;
+  // Season completion (only players marked as playing this round need scores)
   let roundsComplete = 0;
   for (const r of rounds) {
-    const excluded = excludedByRound[r.id] || new Set();
-    const expectedCount = activePlayerCount - excluded.size;
-    const playersWithScores = new Set(allScores.filter(s => s.round_id === r.id).map(s => s.player_id));
+    const expectedCount = (includedByRound[r.id] || new Set()).size;
+    const playersWithScores = new Set(
+      allScores.filter(s => s.round_id === r.id && isPlayerIncluded(includedByRound, r.id, s.player_id)).map(s => s.player_id),
+    );
     if (expectedCount > 0 && playersWithScores.size >= expectedCount) roundsComplete++;
   }
+  const activePlayerCount = activePlayerIds.length;
   const seasonComplete = rounds.length > 0 && roundsComplete === rounds.length;
 
   return {
@@ -1506,10 +1534,10 @@ export async function getStablefordRoundData(roundId, mode = 'stableford') {
       return { name: '', display_name: '', data: [] };
     }
     
-    const [holes, scoresRes, exclusionsRes] = await Promise.all([
+    const [holes, scoresRes, participantIds] = await Promise.all([
       holesForRound(round),
       supabase.from('scores').select('*, players(name, handicap)').eq('round_id', roundId),
-      supabase.from('round_exclusions').select('player_id').eq('round_id', roundId),
+      getRoundParticipants(roundId),
     ]);
     const scores = scoresRes.data || [];
 
@@ -1517,13 +1545,10 @@ export async function getStablefordRoundData(roundId, mode = 'stableford') {
       return { name: '', display_name: '', data: [] };
     }
 
-    // Get excluded players for this round
-    const excludedPlayerIds = new Set((exclusionsRes.data || []).map(e => e.player_id));
-
-    // Get all players and filter for active ones to avoid caching issues
+    const participantSet = new Set(participantIds);
     const allPlayers = await getAllPlayers();
     const activePlayerIds = new Set(allPlayers.filter(p => p.is_active).map(p => p.id));
-    const activeScores = scores.filter(s => activePlayerIds.has(s.player_id) && !excludedPlayerIds.has(s.player_id));
+    const activeScores = scores.filter(s => activePlayerIds.has(s.player_id) && participantSet.has(s.player_id));
     const playerNames = [...new Set(activeScores.map(s => s.players.name))];
 
   // Build maps for both stableford points and stroke play
@@ -1623,20 +1648,17 @@ export async function getTeamRoundData(roundId, mode = 'stableford') {
       .is('round_id', null);
     teams = seasonTeams || [];
   }
-  const [holes, scoresRes, exclusionsRes] = await Promise.all([
+  const [holes, scoresRes, participantIds] = await Promise.all([
     holesForRound(round),
     supabase.from('scores').select('*, players(id, name, handicap)').eq('round_id', roundId),
-    supabase.from('round_exclusions').select('player_id').eq('round_id', roundId),
+    getRoundParticipants(roundId),
   ]);
   const scores = scoresRes.data || [];
 
-  // Get excluded players for this round
-  const excludedPlayerIds = new Set((exclusionsRes.data || []).map(e => e.player_id));
-
-  // Get all players and filter for active ones to avoid caching issues
+  const participantSet = new Set(participantIds);
   const allPlayers = await getAllPlayers();
   const activePlayerIds = new Set(allPlayers.filter(p => p.is_active).map(p => p.id));
-  const activeScores = scores.filter(s => activePlayerIds.has(s.player_id) && !excludedPlayerIds.has(s.player_id));
+  const activeScores = scores.filter(s => activePlayerIds.has(s.player_id) && participantSet.has(s.player_id));
 
   if (!holes || holes.length === 0) return { name: '', display_name: '', data: [] };
 
@@ -1978,7 +2000,6 @@ export async function archiveAndStartNewSeason(newName) {
   await safeDelete('teams', 'id', 0);
   await delay(150);
 
-  // round_exclusions cascades when rounds are deleted, but clear explicitly for safety
   await safeDelete('round_exclusions', 'round_id', 0);
   await delay(150);
 

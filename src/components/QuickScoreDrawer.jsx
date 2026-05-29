@@ -18,7 +18,7 @@ const QuickScoreDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [excludedPlayers, setExcludedPlayers] = useState(new Set());
+  const [includedPlayers, setIncludedPlayers] = useState(new Set());
   const [roundClosed, setRoundClosed] = useState(false);
 
   // Get active (non-closed) rounds only - memoized to prevent dependency array issues
@@ -66,7 +66,7 @@ const QuickScoreDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
   useEffect(() => {
     if (!selectedRound) {
       setHoles([]);
-      setExcludedPlayers(new Set());
+      setIncludedPlayers(new Set());
       setRoundClosed(false);
       setScores({});
       setSelectedHole(null);
@@ -80,10 +80,10 @@ const QuickScoreDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
     
     Promise.all([
       db.getHolesForRound(selectedRound),
-      db.getRoundExclusions(selectedRound)
-    ]).then(([holesData, exclusionIds]) => {
+      db.getRoundParticipants(selectedRound)
+    ]).then(([holesData, participantIds]) => {
       setHoles(holesData || []);
-      setExcludedPlayers(new Set(exclusionIds || []));
+      setIncludedPlayers(new Set(participantIds || []));
       
       // Load existing scores if player selected
       if (selectedPlayer) {
@@ -179,7 +179,7 @@ const QuickScoreDrawer = ({ isOpen, onClose, rounds, players, userId, userPlayer
     }
   };
 
-  const availablePlayers = players.filter(p => !excludedPlayers.has(p.id));
+  const availablePlayers = players.filter(p => includedPlayers.has(p.id));
 
   if (!isOpen) return null;
 

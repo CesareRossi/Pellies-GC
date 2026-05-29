@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PencilSimple, Trash, Plus, Check, X, UserCircle, ShieldCheck, Clock, ShieldSlash, Warning, Flag, Trophy, CaretDown, Target, Lock, LockOpen } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
+import { parseHoleField, validateCourseHoles, normalizeHolesForSave } from '../lib/courseHoles';
 import { formatHandicap } from '../lib/utils';
 import ConfirmModal from './ConfirmModal';
 import SeasonRecapModal from './SeasonRecap';
@@ -182,6 +183,7 @@ const CoursesPanel = () => {
   const [holes, setHoles] = useState([]);
   const [savingHoles, setSavingHoles] = useState(false);
   const [holesMsg, setHolesMsg] = useState('');
+  const [holesError, setHolesError] = useState('');
 
   useEffect(() => { load(); }, []);
   const load = async () => { setCourses(await db.getCourses(true)); };
@@ -214,16 +216,24 @@ const CoursesPanel = () => {
       setHoles(Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, par: 4, stroke_index: i + 1 })));
     }
     setHolesMsg('');
+    setHolesError('');
   };
 
   const updateHole = (idx, field, value) => {
-    setHoles(prev => prev.map((h, i) => i === idx ? { ...h, [field]: parseInt(value) || 0 } : h));
+    setHolesError('');
+    setHoles(prev => prev.map((h, i) => (i === idx ? { ...h, [field]: parseHoleField(value) } : h)));
   };
 
   const saveHoles = async () => {
-    setSavingHoles(true); setHolesMsg('');
+    const validationErrors = validateCourseHoles(holes, holesCourse?.par);
+    if (validationErrors.length) {
+      setHolesError(validationErrors.join(' '));
+      return;
+    }
+    setSavingHoles(true); setHolesMsg(''); setHolesError('');
     try {
-      const data = holes.map(h => ({ course_id: holesCourse.id, hole_number: h.hole_number, par: h.par, stroke_index: h.stroke_index }));
+      const normalized = normalizeHolesForSave(holes);
+      const data = normalized.map(h => ({ course_id: holesCourse.id, ...h }));
       await db.upsertCourseHoles(data);
       setHolesMsg('✅ Holes saved! Every round on this course now uses these.');
       setTimeout(() => setHolesMsg(''), 3000);
@@ -282,26 +292,62 @@ const CoursesPanel = () => {
             </div>
           }
         >
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[min(70vh,32rem)] overflow-y-auto pr-1 -mr-1">
             <p className="text-xs text-[#A9C5B4]/80 leading-relaxed">Par &amp; SI set once per course — every round on this course uses these automatically.</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5">
-              {[0, 9].map(offset => (
-                <div key={offset} className="space-y-1">
-                  <div className="grid grid-cols-[32px_1fr_1fr] gap-1.5 text-[10px] text-[#A9C5B4]/70 uppercase tracking-wider font-semibold px-1 pb-1 border-b border-[#D4AF37]/10">
-                    <span className="text-center">#</span><span className="text-center">Par</span><span className="text-center">SI</span>
+            {holesCourse?.par != null && (
+              <p className="text-xs text-[#A9C5B4]">
+                Course par: <strong className="text-white">{holesCourse.par}</strong>
+                {' · '}
+                Holes total:{' '}
+                <strong className={holes.reduce((s, h) => s + (Number(h.par) || 0), 0) === Number(holesCourse.par) ? 'text-emerald-300' : 'text-amber-300'}>
+                  {holes.reduce((s, h) => s + (Number(h.par) || 0), 0)}
+                </strong>
+              </p>
+            )}
+            {holesError && (
+              <div className="rounded-lg border border-red-500/40 bg-red-900/20 px-3 py-2" role="alert">
+                <p className="text-red-300 text-xs leading-relaxed">{holesError}</p>
+              </div>
+            )}
+            <div className="grid grid-cols-3 gap-2 text-[10px] text-[#A9C5B4]/70 uppercase tracking-wider px-1 pb-1 border-b border-[#D4AF37]/10 sticky top-0 bg-[#0F2C1D] z-10 py-1">
+              <span className="text-center">Hole</span>
+              <span className="text-center">Par</span>
+              <span className="text-center">SI</span>
+            </div>
+            <div className="space-y-2">
+              {holes.map((h) => {
+                const i = holes.findIndex(x => x.hole_number === h.hole_number);
+                return (
+                  <div
+                    key={h.hole_number}
+                    className="grid grid-cols-3 gap-2 items-center bg-[#051A10]/50 rounded-lg p-2.5 sm:p-2 border border-[#D4AF37]/10"
+                  >
+                    <span className="text-[#D4AF37] text-sm font-bold text-center">{h.hole_number}</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={h.par === '' || h.par == null ? '' : h.par}
+                      onChange={e => updateHole(i, 'par', e.target.value)}
+                      className="w-full min-h-[44px] sm:min-h-0 sm:py-1.5 px-2 py-2.5 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white text-base sm:text-sm text-center focus:outline-none focus:border-[#D4AF37]/50"
+                      min={1}
+                      max={6}
+                      placeholder="Par"
+                      aria-label={`Hole ${h.hole_number} par`}
+                    />
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={h.stroke_index === '' || h.stroke_index == null ? '' : h.stroke_index}
+                      onChange={e => updateHole(i, 'stroke_index', e.target.value)}
+                      className="w-full min-h-[44px] sm:min-h-0 sm:py-1.5 px-2 py-2.5 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white text-base sm:text-sm text-center focus:outline-none focus:border-[#D4AF37]/50"
+                      min={1}
+                      max={18}
+                      placeholder="SI"
+                      aria-label={`Hole ${h.hole_number} stroke index`}
+                    />
                   </div>
-                  {holes.slice(offset, offset + 9).map((h) => {
-                    const i = holes.findIndex(x => x.hole_number === h.hole_number);
-                    return (
-                      <div key={h.hole_number} className="grid grid-cols-[32px_1fr_1fr] gap-1.5 items-center">
-                        <span className="text-[#D4AF37] text-xs font-bold text-center">{h.hole_number}</span>
-                        <input type="number" value={h.par} onChange={e => updateHole(i, 'par', e.target.value)} className="w-full px-1 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-sm text-center focus:outline-none focus:border-[#D4AF37]/50" />
-                        <input type="number" value={h.stroke_index} onChange={e => updateHole(i, 'stroke_index', e.target.value)} className="w-full px-1 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-sm text-center focus:outline-none focus:border-[#D4AF37]/50" />
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </Modal>
@@ -317,10 +363,9 @@ const RoundsPanel = ({ onSeasonChanged }) => {
   const [players, setPlayers] = useState([]);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ round_number: null, course_id: null, beer_hole: null, joker_hole: null });
-  // Set of player IDs who did NOT compete in the round being edited
-  const [excluded, setExcluded] = useState(new Set());
-  // Snapshot of exclusions when the edit modal opened — used to diff on save
-  const [excludedInitial, setExcludedInitial] = useState(new Set());
+  // Set of player IDs who played this round
+  const [included, setIncluded] = useState(new Set());
+  const [includedInitial, setIncludedInitial] = useState(new Set());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   // Confirmations
@@ -328,7 +373,7 @@ const RoundsPanel = ({ onSeasonChanged }) => {
   const [confirmClear, setConfirmClear] = useState(null); // round to clear scores
   const [confirmCloseRound, setConfirmCloseRound] = useState(null); // round to close/reopen
   const [actionMsg, setActionMsg] = useState('');
-  const [allExclusions, setAllExclusions] = useState([]);
+  const [allInclusions, setAllInclusions] = useState([]);
   const [currentRoundId, setCurrentRoundId] = useState(null);
   const [settingCurrent, setSettingCurrent] = useState(false);
 
@@ -337,7 +382,7 @@ const RoundsPanel = ({ onSeasonChanged }) => {
     setRounds(await db.getRounds());
     setCourses(await db.getCourses());
     setPlayers(await db.getPlayers());
-    try { setAllExclusions(await db.getAllRoundExclusions()); } catch { /* ignore */ }
+    try { setAllInclusions(await db.getAllRoundInclusions()); } catch { /* ignore */ }
     // Load current round from season
     try {
       const currentRound = await db.getCurrentRound();
@@ -355,26 +400,27 @@ const RoundsPanel = ({ onSeasonChanged }) => {
     });
     setError('');
     try {
-      const ids = await db.getRoundExclusions(round.id);
+      const ids = await db.getRoundParticipants(round.id);
       const s = new Set(ids);
-      setExcluded(s);
-      setExcludedInitial(new Set(s));
+      setIncluded(s);
+      setIncludedInitial(new Set(s));
     } catch {
-      setExcluded(new Set());
-      setExcludedInitial(new Set());
+      setIncluded(new Set());
+      setIncludedInitial(new Set());
     }
   };
 
   const openNew = () => {
     setEditing('new');
     setForm({ round_number: rounds.length + 1, course_id: null, beer_hole: null, joker_hole: null });
-    setExcluded(new Set());
-    setExcludedInitial(new Set());
+    const activeIds = new Set(players.filter(p => p.is_active).map(p => p.id));
+    setIncluded(activeIds);
+    setIncludedInitial(new Set(activeIds));
     setError('');
   };
 
-  const togglePlayerExcluded = (playerId) => {
-    setExcluded(prev => {
+  const togglePlayerIncluded = (playerId) => {
+    setIncluded(prev => {
       const next = new Set(prev);
       if (next.has(playerId)) next.delete(playerId); else next.add(playerId);
       return next;
@@ -401,13 +447,12 @@ const RoundsPanel = ({ onSeasonChanged }) => {
         await db.updateRound(editing, data);
         roundId = editing;
       }
-      // Persist exclusion diff
       if (roundId) {
-        const toAdd = [...excluded].filter(id => !excludedInitial.has(id));
-        const toRemove = [...excludedInitial].filter(id => !excluded.has(id));
+        const toAdd = [...included].filter(id => !includedInitial.has(id));
+        const toRemove = [...includedInitial].filter(id => !included.has(id));
         await Promise.all([
-          ...toAdd.map(id => db.setPlayerExcluded(roundId, id, true)),
-          ...toRemove.map(id => db.setPlayerExcluded(roundId, id, false)),
+          ...toAdd.map(id => db.setPlayerIncluded(roundId, id, true)),
+          ...toRemove.map(id => db.setPlayerIncluded(roundId, id, false)),
         ]);
       }
       setEditing(null); await load();
@@ -486,7 +531,7 @@ const RoundsPanel = ({ onSeasonChanged }) => {
       </div>
       {actionMsg && <div className={`mb-4 py-2 px-3 rounded-lg text-xs ${actionMsg.includes('Error') ? 'bg-red-900/30 text-red-400 border border-red-500/30' : 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/30'}`} data-testid="rounds-action-msg">{actionMsg}</div>}
       <div className="space-y-2">{rounds.map(r => {
-        const exCount = allExclusions.filter(e => e.round_id === r.id).length;
+        const inCount = allInclusions.filter(e => e.round_id === r.id).length;
         return (
         <div key={r.id} className={`flex items-center justify-between py-2.5 px-4 rounded-lg border ${currentRoundId === r.id ? 'bg-[#D4AF37]/20 border-[#D4AF37]/50' : 'bg-[#051A10]/60 border-[#D4AF37]/10'}`}>
           <div className="min-w-0 flex-1">
@@ -497,7 +542,7 @@ const RoundsPanel = ({ onSeasonChanged }) => {
             <p className="text-[#A9C5B4] text-xs truncate">{r.courses ? r.courses.name : 'No course'} {r.is_setup ? '' : '(not set up)'}
               {r.beer_hole && <span className="ml-2 text-rose-300">🍺 H{r.beer_hole}</span>}
               {r.joker_hole && <span className="ml-2 text-purple-300">🎭 H{r.joker_hole}</span>}
-              {exCount > 0 && <span className="ml-2 text-amber-300">✕ {exCount} out</span>}
+              {inCount > 0 && <span className="ml-2 text-emerald-300/90">{inCount} playing</span>}
               {r.is_closed && <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-red-500/20 text-red-400 rounded">CLOSED</span>}
             </p>
           </div>
@@ -574,37 +619,32 @@ const RoundsPanel = ({ onSeasonChanged }) => {
             </div>
             <p className="text-[11px] text-[#A9C5B4]/70 italic leading-relaxed">🍺 Beer Hole: worst score on this hole buys drinks (ties = all liable). 🎭 Joker Hole: stableford points on this hole count double. Leave either on <span className="text-[#D4AF37]">Disabled</span> to skip it for this round.</p>
 
-            {/* Excluded players */}
-            {editing !== 'new' && (
-              <div>
-                <label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Didn't play this round</label>
-                <p className="text-[11px] text-[#A9C5B4]/70 italic leading-relaxed mb-2">
-                  Tap anyone who sat this round out. They're excluded from individual awards &amp; the season-complete gate, but their partner's score still counts for the team.
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-48 overflow-y-auto pr-1">
-                  {players.map(p => {
-                    const isOut = excluded.has(p.id);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => togglePlayerExcluded(p.id)}
-                        className={`text-left px-2.5 py-1.5 rounded-md border text-xs transition-colors ${isOut ? 'bg-amber-500/15 border-amber-500/40 text-amber-200' : 'bg-[#051A10]/60 border-[#D4AF37]/15 text-[#A9C5B4] hover:border-[#D4AF37]/30'}`}
-                        data-testid={`round-exclude-${p.id}`}
-                      >
-                        <span className="inline-block w-3 mr-1">{isOut ? '✕' : ''}</span>{p.name}
-                      </button>
-                    );
-                  })}
-                </div>
-                {excluded.size > 0 && (
-                  <p className="text-[11px] text-amber-300 mt-2">{excluded.size} player{excluded.size === 1 ? '' : 's'} marked as not playing this round.</p>
-                )}
+            {/* Players who played this round */}
+            <div>
+              <label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Played this round</label>
+              <p className="text-[11px] text-[#A9C5B4]/70 italic leading-relaxed mb-2">
+                Tap everyone who played. Only selected players count for scoring, awards, and score entry. New players are not included until you add them here.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                {players.filter(p => p.is_active).map(p => {
+                  const isIn = included.has(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => togglePlayerIncluded(p.id)}
+                      className={`text-left px-2.5 py-1.5 rounded-md border text-xs transition-colors ${isIn ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-[#051A10]/60 border-[#D4AF37]/15 text-[#A9C5B4] hover:border-[#D4AF37]/30'}`}
+                      data-testid={`round-include-${p.id}`}
+                    >
+                      <span className="inline-block w-3 mr-1">{isIn ? '✓' : ''}</span>{p.name}
+                    </button>
+                  );
+                })}
               </div>
-            )}
-            {editing === 'new' && (
-              <p className="text-[11px] text-[#A9C5B4]/60 italic">Save the round first, then reopen it to mark anyone who didn't play.</p>
-            )}
+              {included.size > 0 && (
+                <p className="text-[11px] text-emerald-300 mt-2">{included.size} player{included.size === 1 ? '' : 's'} playing this round.</p>
+              )}
+            </div>
 
             <ErrorMsg msg={error} />
           </div>

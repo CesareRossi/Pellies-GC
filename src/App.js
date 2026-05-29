@@ -60,6 +60,7 @@ const supabaseKey = process.env.REACT_APP_SUPABASE_KEY || 'sb_publishable_cpgvQJ
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const formatLastUpdated = (ts) => ts ? new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Never';
+const DEFAULT_APP_TITLE = 'Pellies Golf League';
 
 // ===== MAIN APP =====
 function App() {
@@ -142,6 +143,11 @@ function App() {
 
   // Load initial data
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    const name = currentSeason?.name?.trim();
+    document.title = name || DEFAULT_APP_TITLE;
+  }, [currentSeason?.name]);
 
   const loadView = useCallback(async (v, param) => {
     setLoading(true);
@@ -395,7 +401,7 @@ function App() {
                 <div className="h-12 w-12 sm:h-14 sm:w-14 shrink-0 overflow-hidden rounded-md border border-[#D4AF37]/25 bg-[#051A10] flex items-center justify-center">
                   <img src="/favicon.svg" alt="Pellies BC" className="w-[84px] h-[84px] sm:w-[96px] sm:h-[96px] object-contain"/>
                 </div>
-                <div><h1 className="text-2xl sm:text-3xl font-sans font-bold text-[#D4AF37] tracking-tight" data-testid="app-season-title">{currentSeason?.name || 'Pellies Golf League'}</h1><p className="text-xs text-[#A9C5B4] mt-0.5">Updated: {formatLastUpdated(lastUpdated)}</p></div>
+                <div><h1 className="text-2xl sm:text-3xl font-sans font-bold text-[#D4AF37] tracking-tight" data-testid="app-season-title">{currentSeason?.name || DEFAULT_APP_TITLE}</h1><p className="text-xs text-[#A9C5B4] mt-0.5">Updated: {formatLastUpdated(lastUpdated)}</p></div>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={handleRefresh} disabled={refreshing} className="flex items-center gap-2 px-3 py-2 bg-[#D4AF37]/20 hover:bg-[#D4AF37]/30 text-[#D4AF37] border border-[#D4AF37]/40 rounded-lg transition-colors disabled:opacity-50">

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { ArrowRight, ArrowLeft, Check, Plus, Trash, Flag, MapPin, UsersThree, Golf, PencilSimple } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
 import { formatHandicap } from '../lib/utils';
+import { parseHoleField, validateCourseHoles, normalizeHolesForSave } from '../lib/courseHoles';
 import ConfirmModal from './ConfirmModal';
 
 const steps = ['Welcome', 'Players', 'Courses', 'Rounds', 'Teams', 'Complete'];
@@ -30,7 +31,8 @@ export default function SeasonWizard({ onComplete }) {
   const [rounds, setRounds] = useState([]);
   const [editingCourseHoles, setEditingCourseHoles] = useState(null); // course id
   const [courseHolesDraft, setCourseHolesDraft] = useState([]);
-  const [newRoundExcluded, setNewRoundExcluded] = useState(new Set()); // players excluded from new round
+  const [courseHolesError, setCourseHolesError] = useState('');
+  const [newRoundIncluded, setNewRoundIncluded] = useState(() => new Set()); // players who played the new round
   const [teams, setTeams] = useState([]);
   const [newTeam, setNewTeam] = useState({ player1: '', player2: '' });
 
@@ -43,6 +45,12 @@ export default function SeasonWizard({ onComplete }) {
   useEffect(() => {
     if (step === 4) db.getAllTeams().then(setTeams).catch(() => {});
   }, [step]);
+
+  useEffect(() => {
+    const activeIds = players.filter(p => p.is_active).map(p => p.id);
+    if (activeIds.length === 0) return;
+    setNewRoundIncluded(prev => (prev.size === 0 ? new Set(activeIds) : prev));
+  }, [players]);
 
   const next = () => setStep(s => Math.min(s + 1, steps.length - 1));
   const prev = () => setStep(s => Math.max(s - 1, 0));
@@ -150,6 +158,7 @@ export default function SeasonWizard({ onComplete }) {
   const openCourseHoles = async (courseId) => {
     setEditingCourseHoles(courseId);
     setMsg('');
+    setCourseHolesError('');
     try {
       const existing = await db.getCourseHoles(courseId);
       if (existing.length > 0) {
@@ -163,16 +172,22 @@ export default function SeasonWizard({ onComplete }) {
   };
 
   const updateCourseHole = (idx, field, value) => {
-    // Allow empty string to stay blank, otherwise parse as integer
-    const parsedValue = value === '' ? '' : parseInt(value);
-    setCourseHolesDraft(prev => prev.map((h, i) => i === idx ? { ...h, [field]: parsedValue } : h));
+    setCourseHolesError('');
+    setCourseHolesDraft(prev => prev.map((h, i) => (i === idx ? { ...h, [field]: parseHoleField(value) } : h)));
   };
 
   const saveCourseHoles = async () => {
     if (!editingCourseHoles) return;
-    setSaving(true); setMsg('');
+    const course = courses.find(c => c.id === editingCourseHoles);
+    const validationErrors = validateCourseHoles(courseHolesDraft, course?.par);
+    if (validationErrors.length) {
+      setCourseHolesError(validationErrors.join(' '));
+      return;
+    }
+    setSaving(true); setMsg(''); setCourseHolesError('');
     try {
-      const rows = courseHolesDraft.map(h => ({ course_id: editingCourseHoles, hole_number: h.hole_number, par: h.par, stroke_index: h.stroke_index }));
+      const normalized = normalizeHolesForSave(courseHolesDraft);
+      const rows = normalized.map(h => ({ course_id: editingCourseHoles, ...h }));
       await db.upsertCourseHoles(rows);
       setMsg('Course holes saved!'); setTimeout(() => setMsg(''), 3000);
     } catch (e) { setMsg(e.message); }
@@ -194,20 +209,19 @@ export default function SeasonWizard({ onComplete }) {
       const nextNum = existingRounds.length > 0 ? Math.max(...existingRounds.map(r => r.round_number)) + 1 : 1;
       const r = await db.createRound({ round_number: nextNum, course_id: parseInt(courseId), is_setup: true });
       
-      // Save exclusions for the new round
-      if (newRoundExcluded.size > 0 && r.id) {
-        await Promise.all([...newRoundExcluded].map(playerId => db.setPlayerExcluded(r.id, playerId, true)));
+      if (r.id && newRoundIncluded.size > 0) {
+        await Promise.all([...newRoundIncluded].map(playerId => db.setPlayerIncluded(r.id, playerId, true)));
       }
       
       const fullRound = { ...r, courses: courses.find(c => c.id === parseInt(courseId)) };
       setRounds(prev => [...prev, fullRound]);
-      setNewRoundExcluded(new Set()); // Reset exclusions
+      setNewRoundIncluded(new Set(players.filter(p => p.is_active).map(p => p.id)));
     } catch (e) { setMsg(e.message); }
     finally { setSaving(false); }
   };
   
-  const toggleNewRoundExcluded = (playerId) => {
-    setNewRoundExcluded(prev => {
+  const toggleNewRoundIncluded = (playerId) => {
+    setNewRoundIncluded(prev => {
       const next = new Set(prev);
       if (next.has(playerId)) next.delete(playerId); else next.add(playerId);
       return next;
@@ -406,55 +420,78 @@ export default function SeasonWizard({ onComplete }) {
                         <p className="text-[#A9C5B4] text-xs">Par {c.par} &middot; Rating {c.rating} &middot; Slope {c.slope}</p>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <button onClick={() => openCourseHoles(editingCourseHoles === c.id ? null : c.id)} className="text-xs text-[#D4AF37] border border-[#D4AF37]/30 px-2 py-1 rounded hover:bg-[#D4AF37]/10">{editingCourseHoles === c.id ? 'Close' : 'Holes'}</button>
+                        <button
+                          onClick={() => {
+                            if (editingCourseHoles === c.id) {
+                              setEditingCourseHoles(null);
+                              setCourseHolesError('');
+                            } else {
+                              openCourseHoles(c.id);
+                            }
+                          }}
+                          className="text-xs text-[#D4AF37] border border-[#D4AF37]/30 px-2 py-1 rounded hover:bg-[#D4AF37]/10"
+                        >
+                          {editingCourseHoles === c.id ? 'Close' : 'Holes'}
+                        </button>
                         <button onClick={() => toggleCourseActive(c)} className="text-xs text-[#A9C5B4] hover:text-amber-400 border border-transparent hover:border-amber-500/30 px-2 py-1 rounded">{c.is_active ? 'Disable' : 'Enable'}</button>
                       </div>
                     </div>
                     {editingCourseHoles === c.id && (
                       <div className="px-3 pb-3 border-t border-[#D4AF37]/10">
                         <p className="text-[11px] text-[#A9C5B4]/70 italic py-2">Par &amp; SI per hole — used by every round played on this course.</p>
-                        
-                        {/* Mobile-friendly layout */}
-                        <div className="space-y-3">
-                          {/* Header */}
-                          <div className="grid grid-cols-3 gap-2 text-[10px] text-[#A9C5B4]/70 uppercase tracking-wider px-2 pb-2 border-b border-[#D4AF37]/10">
+                        {c.par != null && (
+                          <p className="text-xs text-[#A9C5B4] mb-2">
+                            Course par: <strong className="text-white">{c.par}</strong>
+                            {' · '}
+                            Holes total:{' '}
+                            <strong className={courseHolesDraft.reduce((s, h) => s + (Number(h.par) || 0), 0) === Number(c.par) ? 'text-emerald-300' : 'text-amber-300'}>
+                              {courseHolesDraft.reduce((s, h) => s + (Number(h.par) || 0), 0)}
+                            </strong>
+                          </p>
+                        )}
+                        {courseHolesError && (
+                          <div className="rounded-lg border border-red-500/40 bg-red-900/20 px-3 py-2 mb-3" role="alert">
+                            <p className="text-red-300 text-xs leading-relaxed">{courseHolesError}</p>
+                          </div>
+                        )}
+                        <div className="max-h-[min(55vh,28rem)] overflow-y-auto pr-1 -mr-1 space-y-2">
+                          <div className="grid grid-cols-3 gap-2 text-[10px] text-[#A9C5B4]/70 uppercase tracking-wider px-1 pb-1 border-b border-[#D4AF37]/10 sticky top-0 bg-[#051A10] z-10 py-1">
                             <span className="text-center">Hole</span>
                             <span className="text-center">Par</span>
                             <span className="text-center">SI</span>
                           </div>
-                          
-                          {/* Holes - single column on mobile, two columns on desktop */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {courseHolesDraft.map((h) => {
-                              const i = courseHolesDraft.findIndex(x => x.hole_number === h.hole_number);
-                              return (
-                                <div key={h.hole_number} className="grid grid-cols-3 gap-2 items-center bg-[#051A10]/40 rounded-lg p-2 border border-[#D4AF37]/10">
-                                  <span className="text-[#D4AF37] text-sm font-bold text-center">{h.hole_number}</span>
-                                  <input 
-                                    type="number" 
-                                    value={h.par === '' || h.par == null ? '' : h.par} 
-                                    onChange={e => updateCourseHole(i, 'par', e.target.value)} 
-                                    className="w-full px-2 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs text-center focus:outline-none focus:border-[#D4AF37]/50 placeholder-[#A9C5B4]/30" 
-                                    min="1" 
-                                    max="6"
-                                    placeholder="Par"
-                                  />
-                                  <input 
-                                    type="number" 
-                                    value={h.stroke_index === '' || h.stroke_index == null ? '' : h.stroke_index} 
-                                    onChange={e => updateCourseHole(i, 'stroke_index', e.target.value)} 
-                                    className="w-full px-2 py-1.5 rounded bg-[#051A10] border border-[#D4AF37]/20 text-white text-xs text-center focus:outline-none focus:border-[#D4AF37]/50 placeholder-[#A9C5B4]/30" 
-                                    min="1" 
-                                    max="18"
-                                    placeholder="SI"
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
+                          {courseHolesDraft.map((h) => {
+                            const i = courseHolesDraft.findIndex(x => x.hole_number === h.hole_number);
+                            return (
+                              <div key={h.hole_number} className="grid grid-cols-3 gap-2 items-center bg-[#051A10]/40 rounded-lg p-2.5 border border-[#D4AF37]/10">
+                                <span className="text-[#D4AF37] text-sm font-bold text-center">{h.hole_number}</span>
+                                <input
+                                  type="number"
+                                  inputMode="numeric"
+                                  value={h.par === '' || h.par == null ? '' : h.par}
+                                  onChange={e => updateCourseHole(i, 'par', e.target.value)}
+                                  className="w-full min-h-[44px] px-2 py-2.5 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white text-base text-center focus:outline-none focus:border-[#D4AF37]/50 placeholder-[#A9C5B4]/30"
+                                  min={1}
+                                  max={6}
+                                  placeholder="Par"
+                                  aria-label={`Hole ${h.hole_number} par`}
+                                />
+                                <input
+                                  type="number"
+                                  inputMode="numeric"
+                                  value={h.stroke_index === '' || h.stroke_index == null ? '' : h.stroke_index}
+                                  onChange={e => updateCourseHole(i, 'stroke_index', e.target.value)}
+                                  className="w-full min-h-[44px] px-2 py-2.5 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white text-base text-center focus:outline-none focus:border-[#D4AF37]/50 placeholder-[#A9C5B4]/30"
+                                  min={1}
+                                  max={18}
+                                  placeholder="SI"
+                                  aria-label={`Hole ${h.hole_number} stroke index`}
+                                />
+                              </div>
+                            );
+                          })}
                         </div>
-                        
-                        <button onClick={saveCourseHoles} disabled={saving} className="mt-4 w-full py-2.5 rounded-lg bg-[#D4AF37] text-[#051A10] font-bold text-sm hover:bg-[#F1D67E] disabled:opacity-40"><Check size={14} className="inline mr-1" /> Save Holes</button>
+                        <button onClick={saveCourseHoles} disabled={saving} className="mt-4 w-full min-h-[44px] py-2.5 rounded-lg bg-[#D4AF37] text-[#051A10] font-bold text-sm hover:bg-[#F1D67E] disabled:opacity-40"><Check size={14} className="inline mr-1" /> Save Holes</button>
                       </div>
                     )}
                   </div>
@@ -526,25 +563,24 @@ export default function SeasonWizard({ onComplete }) {
                   <button onClick={() => { const sel = document.getElementById('newRoundCourse'); addRound(sel.value); sel.value = ''; }} disabled={saving} className="px-4 py-2 bg-[#D4AF37] text-[#051A10] font-bold text-sm rounded-lg hover:bg-[#F1D67E] disabled:opacity-40"><Plus size={16} /></button>
                 </div>
                 
-                {/* Player Exclusions for New Round */}
-                <p className="text-[11px] text-[#A9C5B4]/70 italic mb-2">Tap players who didn't play this round (excluded from individual awards)</p>
+                <p className="text-[11px] text-[#A9C5B4]/70 italic mb-2">Tap players who played this round</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-32 overflow-y-auto pr-1">
                   {sortedPlayers.filter(p => p.is_active).map(p => {
-                    const isExcluded = newRoundExcluded.has(p.id);
+                    const isIncluded = newRoundIncluded.has(p.id);
                     return (
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() => toggleNewRoundExcluded(p.id)}
-                        className={`text-left px-2.5 py-1.5 rounded-md border text-xs transition-colors ${isExcluded ? 'bg-amber-500/15 border-amber-500/40 text-amber-200' : 'bg-[#051A10]/60 border-[#D4AF37]/15 text-[#A9C5B4] hover:border-[#D4AF37]/30'}`}
+                        onClick={() => toggleNewRoundIncluded(p.id)}
+                        className={`text-left px-2.5 py-1.5 rounded-md border text-xs transition-colors ${isIncluded ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-[#051A10]/60 border-[#D4AF37]/15 text-[#A9C5B4] hover:border-[#D4AF37]/30'}`}
                       >
-                        {p.name}
+                        <span className="inline-block w-3 mr-1">{isIncluded ? '✓' : ''}</span>{p.name}
                       </button>
                     );
                   })}
                 </div>
-                {newRoundExcluded.size > 0 && (
-                  <p className="text-[11px] text-amber-300 mt-2">{newRoundExcluded.size} player{newRoundExcluded.size === 1 ? '' : 's'} excluded from this round</p>
+                {newRoundIncluded.size > 0 && (
+                  <p className="text-[11px] text-emerald-300 mt-2">{newRoundIncluded.size} player{newRoundIncluded.size === 1 ? '' : 's'} playing this round</p>
                 )}
               </div>
             </div>
