@@ -6,28 +6,49 @@ import * as db from '../services/supabaseService';
 // PGA-Style Live Leaderboard Component
 // Designed for tracking leaderboard during active rounds
 
-const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion = 0 }) => {
+const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion = 0, userId, userPlayerId, allPlayers }) => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [dataMode, setDataMode] = useState(null); // Track which mode the data is for
   const [currentRoundInfo, setCurrentRoundInfo] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [closingRound, setClosingRound] = useState(false);
+  const [availableRounds, setAvailableRounds] = useState([]);
+  const [selectedRoundId, setSelectedRoundId] = useState(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // Get current round data - prioritize explicitly set current round
-      let roundId = currentRound;
-      if (!roundId) {
-        // Try to get the explicitly set current round from season
-        const currentRoundData = await db.getCurrentRound();
-        roundId = currentRoundData?.id;
-      }
-      // Fallback to last set up round if no current round set
-      if (!roundId) {
-        const rounds = await db.getSetUpRounds();
-        const lastRound = rounds[rounds.length - 1];
-        roundId = lastRound?.id;
+      // Get all open rounds (not closed)
+      const allRounds = await db.getRounds();
+      const openRounds = allRounds.filter(r => !r.is_closed && r.is_setup);
+      setAvailableRounds(openRounds);
+
+      // Determine which round to show
+      let roundId = selectedRoundId;
+      
+      if (!roundId && openRounds.length > 0) {
+        // If user is logged in and has a player_id, find the round they're playing in
+        if (userPlayerId && allPlayers.length > 0) {
+          const userPlayer = allPlayers.find(p => p.id === userPlayerId);
+          if (userPlayer) {
+            // Check which round the user is participating in
+            for (const round of openRounds) {
+              const participants = await db.getRoundParticipants(round.id);
+              if (participants.includes(userPlayerId)) {
+                roundId = round.id;
+                break;
+              }
+            }
+          }
+        }
+        
+        // If still no round selected, default to first open round
+        if (!roundId) {
+          roundId = openRounds[0].id;
+        }
+        
+        setSelectedRoundId(roundId);
       }
 
       if (roundId) {
@@ -45,7 +66,7 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion
     } finally {
       setLoading(false);
     }
-  }, [currentRound, mode]);
+  }, [currentRound, mode, selectedRoundId, userPlayerId, allPlayers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     loadData();
@@ -58,6 +79,22 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion
     }, 120000);
     return () => clearInterval(interval);
   }, [loadData]);
+
+  const closeRound = async () => {
+    if (!selectedRoundId) return;
+    setClosingRound(true);
+    try {
+      await db.updateRound(selectedRoundId, { is_closed: true });
+      setSelectedRoundId(null); // Reset to trigger selection of next available round
+      if (onRefresh) onRefresh();
+      loadData();
+    } catch (err) {
+      console.error('Failed to close round:', err);
+      alert('Failed to close round. Please try again.');
+    } finally {
+      setClosingRound(false);
+    }
+  };
 
   // Refresh when roundsVersion changes (e.g., after score save)
   useEffect(() => {
@@ -177,6 +214,13 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion
   };
 
 
+  // Determine if round is finished (all players have completed 18 holes)
+  const isRoundFinished = players.length > 0 && players.every(p => p.thru === 18);
+
+  const handleRoundChange = (roundId) => {
+    setSelectedRoundId(roundId);
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0 }} 
@@ -203,7 +247,35 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion
             Auto-updates every 120s
           </p>
         </div>
+        {isRoundFinished && !currentRoundInfo?.is_closed && (
+          <button
+            onClick={closeRound}
+            disabled={closingRound}
+            className="px-4 py-2 bg-[#D4AF37] text-[#051A10] rounded-lg font-semibold hover:bg-[#F1D67E] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            {closingRound ? 'Closing...' : 'Close Round'}
+          </button>
+        )}
       </div>
+
+      {/* Round Tabs */}
+      {availableRounds.length > 1 && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {availableRounds.map(round => (
+            <button
+              key={round.id}
+              onClick={() => handleRoundChange(round.id)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                selectedRoundId === round.id
+                  ? 'bg-[#D4AF37] text-[#051A10]'
+                  : 'bg-[#051A10] text-[#A9C5B4] hover:bg-[#D4AF37]/10 hover:text-[#D4AF37]'
+              }`}
+            >
+              Round {round.round_number} - {round.courses?.name || 'Unknown Course'}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Leaderboard Table */}
       <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md shadow-2xl overflow-hidden">

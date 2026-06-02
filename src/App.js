@@ -262,7 +262,8 @@ function App() {
     ...(isApprovedUser ? [{ id: 'fines', label: 'Fines' }] : []),
     { id: 'rules', label: 'Rules' },
     ...(canScore ? [{ id: 'score_entry', label: 'Scores' }] : []),
-    ...(isAdmin ? [{ id: 'season_wizard', label: 'Season Setup' }, { id: 'admin', label: 'Admin' }] : []),
+    ...(isApprovedUser ? [{ id: 'season_wizard', label: 'Season Setup' }] : []),
+    ...(isAdmin ? [{ id: 'admin', label: 'Admin' }] : []),
   ];
 
   const stabItems = useMemo(() => rounds.map(r=>({id: r.id, label: 'Individual - ' + (r.courses?.name || 'Round ' + r.round_number)})), [rounds]);
@@ -335,7 +336,7 @@ function App() {
     if (view === 'live') {
       return (
         <motion.div key="live" initial={{opacity:0,y:20}} animate={{opacity:1,y:0}}>
-          <LiveLeaderboard currentRound={viewParam} onRefresh={handleRefresh} mode={leaderboardMode} setMode={setLeaderboardMode} roundsVersion={roundsVersion} />
+          <LiveLeaderboard currentRound={viewParam} onRefresh={handleRefresh} mode={leaderboardMode} setMode={setLeaderboardMode} roundsVersion={roundsVersion} userId={user?.id} userPlayerId={profile?.player_id} allPlayers={players} />
         </motion.div>
       );
     }
