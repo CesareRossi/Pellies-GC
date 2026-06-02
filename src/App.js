@@ -78,7 +78,7 @@ function App() {
   // Data
   const [overview, setOverview] = useState(null);
   const [leaderboard, setLeaderboard] = useState(null);
-  const [teamLb, setTeamLb] = useState(null);
+  // TEAM COMMENTED OUT: const [teamLb, setTeamLb] = useState(null);
   const [playerStats, setPlayerStats] = useState(null);
   const [awards, setAwards] = useState(null);
   const [sheetData, setSheetData] = useState(null);
@@ -156,7 +156,7 @@ function App() {
     try {
       if (v === 'overview') { setOverview(await db.getSeasonOverview()); }
       else if (v === 'league_lb') { setLeaderboard(await db.getLeaderboardData(leaderboardMode)); }
-      else if (v === 'team_lb') { setTeamLb(await db.getTeamLeaderboardData(leaderboardMode)); }
+      // TEAM COMMENTED OUT: else if (v === 'team_lb') { setTeamLb(await db.getTeamLeaderboardData(leaderboardMode)); }
       else if (v === 'stats') { setPlayerStats(await db.getPlayerStats()); }
       else if (v === 'awards') { setAwards(await db.getAwards()); }
       else if (v === 'stableford' && param) { 
@@ -164,11 +164,11 @@ function App() {
         setSheetData(data); 
         setSheetDataMode(leaderboardMode);
       }
-      else if (v === 'teams' && param) { 
-        const data = await db.getTeamRoundData(param, leaderboardMode);
-        setSheetData(data); 
-        setSheetDataMode(leaderboardMode);
-      }
+      // TEAM COMMENTED OUT: else if (v === 'teams' && param) { 
+      //   const data = await db.getTeamRoundData(param, leaderboardMode);
+      //   setSheetData(data); 
+      //   setSheetDataMode(leaderboardMode);
+      // }
       setLastUpdated(new Date().toISOString());
     } catch(err) { 
       console.error(err); 
@@ -188,7 +188,8 @@ function App() {
 
   const navigate = (v, param) => {
     // Clear sheetData when navigating to scorecards to prevent showing old data
-    if (v === 'stableford' || v === 'teams') {
+    // TEAM COMMENTED OUT: if (v === 'stableford' || v === 'teams') {
+    if (v === 'stableford') {
       setSheetData(null);
     }
     setView(v);
@@ -248,7 +249,7 @@ function App() {
   const primaryNav = [
     { id: 'overview', label: 'Overview' },
     { id: 'league_lb', label: 'League Leaderboard' },
-    { id: 'team_lb', label: 'Team Leaderboard' },
+    // TEAM COMMENTED OUT: { id: 'team_lb', label: 'Team Leaderboard' },
     { id: 'stats', label: 'Player Stats' },
     { id: 'awards', label: 'Awards' },
     ...(canScore ? [{ id: 'score_entry', label: 'Scores' }] : []),
@@ -265,11 +266,11 @@ function App() {
   ];
 
   const stabItems = useMemo(() => rounds.map(r=>({id: r.id, label: 'Individual - ' + (r.courses?.name || 'Round ' + r.round_number)})), [rounds]);
-  const teamItems = useMemo(() => rounds.map(r=>({id: r.id, label: 'Teams - ' + (r.courses?.name || 'Round ' + r.round_number)})), [rounds]);
+  // TEAM COMMENTED OUT: const teamItems = useMemo(() => rounds.map(r=>({id: r.id, label: 'Teams - ' + (r.courses?.name || 'Round ' + r.round_number)})), [rounds]);
   const mobilePrimaryItems = [
     { id: 'overview', label: 'Overview' },
     { id: 'league_lb', label: 'League Leaderboard' },
-    { id: 'team_lb', label: 'Team Leaderboard' },
+    // TEAM COMMENTED OUT: { id: 'team_lb', label: 'Team Leaderboard' },
   ];
   const quickMenuActiveViews = new Set(['stats', 'awards', 'score_entry', 'season_wizard', 'admin', 'fines', 'rules']);
   const primaryNavBtnClass = (isActive) => {
@@ -338,13 +339,16 @@ function App() {
         </motion.div>
       );
     }
-    if ((view === 'league_lb' || view === 'team_lb') && (leaderboard || teamLb)) {
-      const isTeam = view === 'team_lb';
-      const title = isTeam ? 'Team Leaderboard' : 'League Leaderboard';
+    // TEAM COMMENTED OUT: if ((view === 'league_lb' || view === 'team_lb') && (leaderboard || teamLb)) {
+    if (view === 'league_lb' && leaderboard) {
+      // TEAM COMMENTED OUT: const isTeam = view === 'team_lb';
+      // TEAM COMMENTED OUT: const title = isTeam ? 'Team Leaderboard' : 'League Leaderboard';
+      const title = 'League Leaderboard';
       return (
         <motion.div key={`${view}-${roundsVersion}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
           <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{title}</h2>
-          <DataTable data={isTeam ? teamLb?.leaderboard : leaderboard?.leaderboard}/>
+          {/* TEAM COMMENTED OUT: <DataTable data={isTeam ? teamLb?.leaderboard : leaderboard?.leaderboard}/> */}
+          <DataTable data={leaderboard?.leaderboard}/>
         </motion.div>
       );
     }
@@ -366,21 +370,21 @@ function App() {
         </motion.div>
       );
     }
-    if (view === 'teams' && sheetData && sheetDataMode === leaderboardMode) {
-      return (
-        <motion.div key={`${view}-${viewParam}-${leaderboardMode}-${roundsVersion}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
-          <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
-          <TeamScorecard 
-            data={sheetData?.data}
-            title={null}
-            jokerHole={sheetData?.joker_hole}
-            beerHole={sheetData?.beer_hole}
-            mode={leaderboardMode}
-            playerHandicaps={sheetData?.player_handicaps}
-          />
-        </motion.div>
-      );
-    }
+    // TEAM COMMENTED OUT: if (view === 'teams' && sheetData && sheetDataMode === leaderboardMode) {
+    //   return (
+    //     <motion.div key={`${view}-${viewParam}-${leaderboardMode}-${roundsVersion}`} initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="space-y-4">
+    //       <h2 className="text-2xl sm:text-3xl font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">{sheetData?.display_name}</h2>
+    //       <TeamScorecard 
+    //         data={sheetData?.data}
+    //         title={null}
+    //         jokerHole={sheetData?.joker_hole}
+    //         beerHole={sheetData?.beer_hole}
+    //         mode={leaderboardMode}
+    //         playerHandicaps={sheetData?.player_handicaps}
+    //       />
+    //     </motion.div>
+    //   );
+    // }
     if (view === 'score_entry' && canScore) return <ScoreEntry key={'score-entry-' + roundsVersion} rounds={rounds} players={players} userId={user?.id} userPlayerId={profile?.player_id} currentRoundId={viewParam || currentSeason?.current_round_id} roundsVersion={roundsVersion}/>;
     if (view === 'season_wizard') return <SeasonWizard onComplete={()=>{ loadData(); navigate('overview'); }}/>;
     if (view === 'admin') return <AdminPanel onSeasonChanged={loadData} currentUserId={user?.id} allPlayers={players}/>;
@@ -428,13 +432,15 @@ function App() {
                 <div className="flex items-center gap-1.5">
                   <button onClick={()=>navigate('overview')} className={primaryNavBtnClass(view==='overview')}><Gauge size={17} weight="duotone"/><span>Overview</span></button>
                   <button onClick={()=>navigate('live')} className={primaryNavBtnClass(view==='live')}><Target size={17} weight="duotone"/><span>Live</span></button>
-                  <NavDropdown label="Leaderboards" icon={<Trophy size={17} weight="duotone"/>} items={[{id:'league_lb',label:'League Leaderboard'},{id:'team_lb',label:'Team Leaderboard'}]} activeId={view==='league_lb'||view==='team_lb'?view:null} onSelect={id=>navigate(id)} testId="nav-lb"/>
+                  {/* TEAM COMMENTED OUT: <NavDropdown label="Leaderboards" icon={<Trophy size={17} weight="duotone"/>} items={[{id:'league_lb',label:'League Leaderboard'},{id:'team_lb',label:'Team Leaderboard'}]} activeId={view==='league_lb'||view==='team_lb'?view:null} onSelect={id=>navigate(id)} testId="nav-lb"/> */}
+                  <NavDropdown label="Leaderboards" icon={<Trophy size={17} weight="duotone"/>} items={[{id:'league_lb',label:'League Leaderboard'}]} activeId={view==='league_lb'?view:null} onSelect={id=>navigate(id)} testId="nav-lb"/>
                   {stabItems.length>0&&<NavDropdown label="Individual Rounds" icon={<ChartLine size={17} weight="duotone"/>} items={stabItems} activeId={view==='stableford'?viewParam:null} onSelect={id=>navigate('stableford',id)} testId="nav-stab"/>}
-                  {teamItems.length>0&&<NavDropdown label="Teams Round" icon={<UsersThree size={17} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-teams"/>}
+                  {/* TEAM COMMENTED OUT: {teamItems.length>0&&<NavDropdown label="Teams Round" icon={<UsersThree size={17} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-teams"/>} */}
                 </div>
                 <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-[#D4AF37]/20">
                   {/* Mode Toggle - Desktop - only show on views that use it */}
-                  {['league_lb', 'team_lb', 'stableford', 'teams', 'live'].includes(view) && (
+                  {/* TEAM COMMENTED OUT: {['league_lb', 'team_lb', 'stableford', 'teams', 'live'].includes(view) && ( */}
+                  {['league_lb', 'stableford', 'live'].includes(view) && (
                     <div className="flex bg-[#051A10] rounded-lg p-0.5 border border-[#D4AF37]/20">
                       <button
                         onClick={() => setLeaderboardMode('stableford')}
@@ -459,13 +465,15 @@ function App() {
               </div>
               <div className="lg:hidden rounded-xl border border-[#D4AF37]/20 bg-[#0A2518]/75 backdrop-blur-xl px-2 py-2">
                 <div className="grid grid-cols-2 gap-2">
-                  <NavDropdown label="Play" icon={<Gauge size={16} weight="duotone"/>} items={[{id:'overview',label:'Overview'},{id:'live',label:'Live Leaderboard'},{id:'league_lb',label:'League Leaderboard'},{id:'team_lb',label:'Team Leaderboard'}]} activeId={['overview','live','league_lb','team_lb'].includes(view)?view:null} onSelect={id=>navigate(id)} testId="nav-mobile-primary"/>
+                  {/* TEAM COMMENTED OUT: <NavDropdown label="Play" icon={<Gauge size={16} weight="duotone"/>} items={[{id:'overview',label:'Overview'},{id:'live',label:'Live Leaderboard'},{id:'league_lb',label:'League Leaderboard'},{id:'team_lb',label:'Team Leaderboard'}]} activeId={['overview','live','league_lb','team_lb'].includes(view)?view:null} onSelect={id=>navigate(id)} testId="nav-mobile-primary"/> */}
+                  <NavDropdown label="Play" icon={<Gauge size={16} weight="duotone"/>} items={[{id:'overview',label:'Overview'},{id:'live',label:'Live Leaderboard'},{id:'league_lb',label:'League Leaderboard'}]} activeId={['overview','live','league_lb'].includes(view)?view:null} onSelect={id=>navigate(id)} testId="nav-mobile-primary"/>
                   {quickMenuItems.length>0&&<NavDropdown label="Manage" icon={<Gear size={16} weight="duotone"/>} items={quickMenuItems} activeId={quickMenuActiveViews.has(view)?view:null} onSelect={id=>navigate(id)} testId="nav-mobile-menu"/>}
                   {stabItems.length>0&&<NavDropdown label="Individual" icon={<ChartLine size={16} weight="duotone"/>} items={stabItems} activeId={view==='stableford'?viewParam:null} onSelect={id=>navigate('stableford',id)} testId="nav-mobile-stab"/>}
-                  {teamItems.length>0&&<NavDropdown label="Teams" icon={<UsersThree size={16} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-mobile-teams"/>}
+                  {/* TEAM COMMENTED OUT: {teamItems.length>0&&<NavDropdown label="Teams" icon={<UsersThree size={16} weight="duotone"/>} items={teamItems} activeId={view==='teams'?viewParam:null} onSelect={id=>navigate('teams',id)} testId="nav-mobile-teams"/> */}
                 </div>
                 {/* Mode Toggle - Mobile - only show on views that use it */}
-                {['league_lb', 'team_lb', 'stableford', 'teams', 'live'].includes(view) && (
+                {/* TEAM COMMENTED OUT: {['league_lb', 'team_lb', 'stableford', 'teams', 'live'].includes(view) && ( */}
+                {['league_lb', 'stableford', 'live'].includes(view) && (
                   <div className="mt-2 pt-2 border-t border-[#D4AF37]/20 flex justify-center">
                     <div className="flex bg-[#051A10] rounded-lg p-0.5 border border-[#D4AF37]/20">
                       <button

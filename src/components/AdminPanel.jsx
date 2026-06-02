@@ -162,7 +162,7 @@ const PlayersPanel = () => {
       <ConfirmModal
         open={!!confirmDel}
         title="Remove player?"
-        message={`This will deactivate ${confirmDel?.name} and remove all of their scores and any teams they're part of. This can't be undone.`}
+        message={`This will deactivate ${confirmDel?.name} and remove all of their scores. This can't be undone.`}
         confirmLabel="Remove player"
         onConfirm={doDelete}
         onClose={() => setConfirmDel(null)}
@@ -210,10 +210,10 @@ const CoursesPanel = () => {
       if (existing.length > 0) {
         setHoles(existing.map(h => ({ hole_number: h.hole_number, par: h.par, stroke_index: h.stroke_index })));
       } else {
-        setHoles(Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, par: 4, stroke_index: i + 1 })));
+        setHoles(Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, par: null, stroke_index: null })));
       }
     } catch (e) {
-      setHoles(Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, par: 4, stroke_index: i + 1 })));
+      setHoles(Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, par: null, stroke_index: null })));
     }
     setHolesMsg('');
     setHolesError('');
@@ -413,9 +413,9 @@ const RoundsPanel = ({ onSeasonChanged }) => {
   const openNew = () => {
     setEditing('new');
     setForm({ round_number: rounds.length + 1, course_id: null, beer_hole: null, joker_hole: null });
-    const activeIds = new Set(players.filter(p => p.is_active).map(p => p.id));
-    setIncluded(activeIds);
-    setIncludedInitial(new Set(activeIds));
+    // Changed to empty set so players must be manually selected
+    setIncluded(new Set());
+    setIncludedInitial(new Set());
     setError('');
   };
 
@@ -448,12 +448,23 @@ const RoundsPanel = ({ onSeasonChanged }) => {
         roundId = editing;
       }
       if (roundId) {
-        const toAdd = [...included].filter(id => !includedInitial.has(id));
-        const toRemove = [...includedInitial].filter(id => !included.has(id));
-        await Promise.all([
-          ...toAdd.map(id => db.setPlayerIncluded(roundId, id, true)),
-          ...toRemove.map(id => db.setPlayerIncluded(roundId, id, false)),
-        ]);
+        // For new rounds, exclude all active players who are NOT in the included set
+        // For existing rounds, use incremental approach to avoid RLS issues
+        if (editing === 'new') {
+          const activeIds = players.filter(p => p.is_active).map(p => p.id);
+          const toExclude = activeIds.filter(id => !included.has(id));
+          await Promise.all([
+            ...toExclude.map(id => db.setPlayerIncluded(roundId, id, false)),
+            ...[...included].map(id => db.setPlayerIncluded(roundId, id, true)),
+          ]);
+        } else {
+          const toAdd = [...included].filter(id => !includedInitial.has(id));
+          const toRemove = [...includedInitial].filter(id => !included.has(id));
+          await Promise.all([
+            ...toAdd.map(id => db.setPlayerIncluded(roundId, id, true)),
+            ...toRemove.map(id => db.setPlayerIncluded(roundId, id, false)),
+          ]);
+        }
       }
       setEditing(null); await load();
     } catch (e) { setError(e.message); } finally { setSaving(false); }
@@ -654,7 +665,7 @@ const RoundsPanel = ({ onSeasonChanged }) => {
       <ConfirmModal
         open={!!confirmDel}
         title="Delete round?"
-        message={`This will permanently delete Round ${confirmDel?.round_number} along with all its holes, scores, and team pairings. This cannot be undone.`}
+        message={`This will permanently delete Round ${confirmDel?.round_number} along with all its holes and scores. This cannot be undone.`}
         confirmLabel="Delete round"
         onConfirm={doDelete}
         onClose={() => setConfirmDel(null)}
@@ -662,7 +673,7 @@ const RoundsPanel = ({ onSeasonChanged }) => {
       <ConfirmModal
         open={!!confirmClear}
         title="Clear scores for this round?"
-        message={`All score entries for Round ${confirmClear?.round_number} will be removed. Holes and team pairings are kept.`}
+        message={`All score entries for Round ${confirmClear?.round_number} will be removed. Holes are kept.`}
         confirmLabel="Clear scores"
         onConfirm={doClear}
         onClose={() => setConfirmClear(null)}
@@ -683,7 +694,8 @@ const RoundsPanel = ({ onSeasonChanged }) => {
 
 // ===== TEAMS =====
 // Teams are season-wide: one pairing applies to every round.
-const TeamsPanel = () => {
+// TEAM COMMENTED OUT: const TeamsPanel = () => {
+const TeamsPanel_UNUSED = () => {
   const [teams, setTeams] = useState([]);
   const [players, setPlayers] = useState([]);
   const [editing, setEditing] = useState(null);
@@ -1151,7 +1163,7 @@ const SeasonPanel = ({ onSeasonChanged }) => {
         <div className="space-y-3">
           {archived.map(s => {
             const champ = s.summary_json?.champion;
-            const team = s.summary_json?.champion_team;
+            // TEAM COMMENTED OUT: const team = s.summary_json?.champion_team;
             const isOpen = openArchived === s.id;
             const endDate = s.ended_at ? new Date(s.ended_at) : null;
             return (
@@ -1193,7 +1205,8 @@ const SeasonPanel = ({ onSeasonChanged }) => {
                     {s.summary_json && (
                       <div className="px-4 pb-4 bg-[#051A10]/30">
                         {/* Champion Section */}
-                        {(s.summary_json?.champion?.player || s.summary_json?.champion_team?.player) && (
+                        {/* TEAM COMMENTED OUT: {(s.summary_json?.champion?.player || s.summary_json?.champion_team?.player) && ( */}
+                        {(s.summary_json?.champion?.player) && (
                           <div className="mb-4 pb-3 border-b border-[#D4AF37]/10">
                             <h5 className="text-xs text-[#A9C5B4]/80 uppercase tracking-wider mb-2">Champions</h5>
                             {s.summary_json?.champion?.player && (
@@ -1205,7 +1218,7 @@ const SeasonPanel = ({ onSeasonChanged }) => {
                                 </div>
                               </div>
                             )}
-                            {s.summary_json?.champion_team?.player && (
+                            {/* TEAM COMMENTED OUT: {s.summary_json?.champion_team?.player && (
                               <div className="flex items-center gap-2">
                                 <span className="text-lg">👑</span>
                                 <div className="flex-1 min-w-0">
@@ -1213,7 +1226,7 @@ const SeasonPanel = ({ onSeasonChanged }) => {
                                   <p className="text-[10px] text-[#A9C5B4]/70">{s.summary_json.champion_team.total} points</p>
                                 </div>
                               </div>
-                            )}
+                            )} */}
                           </div>
                         )}
                         
@@ -1423,13 +1436,14 @@ export default function AdminPanel({ onSeasonChanged, currentUserId, allPlayers 
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} data-testid="admin-panel">
       <div className="text-center mb-8"><h2 className="text-3xl font-sans text-[#D4AF37] mb-2">Admin Panel</h2><p className="text-[#A9C5B4] text-sm">Manage your golf league</p></div>
       <div className="flex flex-wrap gap-2 justify-center mb-8">
-        {['players','courses','rounds','teams','users','season','danger'].map(t => <TabBtn key={t} active={tab===t} label={t==='danger' ? 'Danger Zone' : t==='season' ? 'Season' : t.charAt(0).toUpperCase()+t.slice(1)} onClick={()=>setTab(t)}/>)}
+        {/* TEAM COMMENTED OUT: {['players','courses','rounds','teams','users','season','danger'].map(t => <TabBtn key={t} active={tab===t} label={t==='danger' ? 'Danger Zone' : t==='season' ? 'Season' : t.charAt(0).toUpperCase()+t.slice(1)} onClick={()=>setTab(t)}/>) */}
+        {['players','courses','rounds','users','season','danger'].map(t => <TabBtn key={t} active={tab===t} label={t==='danger' ? 'Danger Zone' : t==='season' ? 'Season' : t.charAt(0).toUpperCase()+t.slice(1)} onClick={()=>setTab(t)}/>)}
       </div>
       <div className="max-w-2xl mx-auto rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md p-6 shadow-2xl">
         {tab === 'players' && <PlayersPanel />}
         {tab === 'courses' && <CoursesPanel />}
         {tab === 'rounds' && <RoundsPanel onSeasonChanged={onSeasonChanged} />}
-        {tab === 'teams' && <TeamsPanel />}
+        {/* TEAM COMMENTED OUT: {tab === 'teams' && <TeamsPanel />} */}
         {tab === 'users' && <UsersPanel currentUserId={currentUserId} allPlayers={allPlayers} />}
         {tab === 'season' && <SeasonPanel onSeasonChanged={onSeasonChanged} />}
         {tab === 'danger' && <DangerPanel />}

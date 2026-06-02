@@ -6,7 +6,8 @@ import { formatHandicap } from '../lib/utils';
 import { parseHoleField, validateCourseHoles, normalizeHolesForSave } from '../lib/courseHoles';
 import ConfirmModal from './ConfirmModal';
 
-const steps = ['Welcome', 'Players', 'Courses', 'Rounds', 'Teams', 'Complete'];
+// TEAM COMMENTED OUT: const steps = ['Welcome', 'Players', 'Courses', 'Rounds', 'Teams', 'Complete'];
+const steps = ['Welcome', 'Players', 'Courses', 'Rounds', 'Complete'];
 
 const Field = ({ label, type = 'text', value, onChange, placeholder }) => (
   <div>
@@ -33,8 +34,8 @@ export default function SeasonWizard({ onComplete }) {
   const [courseHolesDraft, setCourseHolesDraft] = useState([]);
   const [courseHolesError, setCourseHolesError] = useState('');
   const [newRoundIncluded, setNewRoundIncluded] = useState(() => new Set()); // players who played the new round
-  const [teams, setTeams] = useState([]);
-  const [newTeam, setNewTeam] = useState({ player1: '', player2: '' });
+  // TEAM COMMENTED OUT: const [teams, setTeams] = useState([]);
+  // TEAM COMMENTED OUT: const [newTeam, setNewTeam] = useState({ player1: '', player2: '' });
 
   useEffect(() => {
     db.getAllPlayers().then(setPlayers).catch(() => {});
@@ -42,15 +43,15 @@ export default function SeasonWizard({ onComplete }) {
     db.getRounds().then(setRounds).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (step === 4) db.getAllTeams().then(setTeams).catch(() => {});
-  }, [step]);
+  // TEAM COMMENTED OUT: useEffect(() => {
+  //   if (step === 4) db.getAllTeams().then(setTeams).catch(() => {});
+  // }, [step]);
 
-  useEffect(() => {
-    const activeIds = players.filter(p => p.is_active).map(p => p.id);
-    if (activeIds.length === 0) return;
-    setNewRoundIncluded(prev => (prev.size === 0 ? new Set(activeIds) : prev));
-  }, [players]);
+  // TEAM COMMENTED OUT: useEffect(() => {
+  // TEAM COMMENTED OUT:   const activeIds = players.filter(p => p.is_active).map(p => p.id);
+  // TEAM COMMENTED OUT:   if (activeIds.length === 0) return;
+  // TEAM COMMENTED OUT:   setNewRoundIncluded(prev => (prev.size === 0 ? new Set(activeIds) : prev));
+  // TEAM COMMENTED OUT: }, [players]);
 
   const next = () => setStep(s => Math.min(s + 1, steps.length - 1));
   const prev = () => setStep(s => Math.max(s - 1, 0));
@@ -84,15 +85,15 @@ export default function SeasonWizard({ onComplete }) {
     setConfirmDialog({
       open: true,
       title: 'Remove Player?',
-      message: `This will disable ${player.name} and remove all of their scores and any teams they're part of. This can't be undone.`,
+      message: `This will disable ${player.name} and remove all of their scores. This can't be undone.`,
       onConfirm: async () => {
         setSaving(true); setMsg('');
         try {
           await db.deletePlayer(playerId);
           setPlayers(prev => prev.filter(p => p.id !== playerId));
-          // Remove from teams
-          await db.deleteTeamsByPlayer(playerId);
-          setTeams(await db.getAllTeams());
+          // TEAM COMMENTED OUT: Remove from teams
+          // TEAM COMMENTED OUT: await db.deleteTeamsByPlayer(playerId);
+          // TEAM COMMENTED OUT: setTeams(await db.getAllTeams());
           setMsg('Player removed successfully!');
           setTimeout(() => setMsg(''), 3000);
         } catch (e) { setMsg(e.message); }
@@ -107,7 +108,7 @@ export default function SeasonWizard({ onComplete }) {
     
     const action = player.is_active ? 'disable' : 'enable';
     const message = player.is_active 
-      ? `This will remove ${player.name} from the league and disable their account. They won't appear in teams or leaderboards.`
+      ? `This will remove ${player.name} from the league and disable their account. They won't appear in leaderboards.`
       : `This will re-enable ${player.name} and restore their access to the league.`;
     
     setConfirmDialog({
@@ -129,11 +130,11 @@ export default function SeasonWizard({ onComplete }) {
             deleted_at: !p.is_active ? null : p.deleted_at 
           } : p));
           
-          // If disabling player, remove them from teams
-          if (player.is_active) {
-            await db.deleteTeamsByPlayer(playerId);
-            setTeams(await db.getAllTeams());
-          }
+          // TEAM COMMENTED OUT: If disabling player, remove them from teams
+          // TEAM COMMENTED OUT: if (player.is_active) {
+          // TEAM COMMENTED OUT:   await db.deleteTeamsByPlayer(playerId);
+          // TEAM COMMENTED OUT:   setTeams(await db.getAllTeams());
+          // TEAM COMMENTED OUT: }
           
           setMsg(`Player ${action}d successfully!`);
           setTimeout(() => setMsg(''), 3000);
@@ -164,10 +165,10 @@ export default function SeasonWizard({ onComplete }) {
       if (existing.length > 0) {
         setCourseHolesDraft(existing.map(h => ({ hole_number: h.hole_number, par: h.par, stroke_index: h.stroke_index })));
       } else {
-        setCourseHolesDraft(Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, par: 4, stroke_index: i + 1 })));
+        setCourseHolesDraft(Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, par: null, stroke_index: null })));
       }
     } catch {
-      setCourseHolesDraft(Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, par: 4, stroke_index: i + 1 })));
+      setCourseHolesDraft(Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, par: null, stroke_index: null })));
     }
   };
 
@@ -209,13 +210,19 @@ export default function SeasonWizard({ onComplete }) {
       const nextNum = existingRounds.length > 0 ? Math.max(...existingRounds.map(r => r.round_number)) + 1 : 1;
       const r = await db.createRound({ round_number: nextNum, course_id: parseInt(courseId), is_setup: true });
       
-      if (r.id && newRoundIncluded.size > 0) {
-        await Promise.all([...newRoundIncluded].map(playerId => db.setPlayerIncluded(r.id, playerId, true)));
+      if (r.id) {
+        // For new rounds, exclude all active players who are NOT in the included set
+        const activeIds = players.filter(p => p.is_active).map(p => p.id);
+        const toExclude = activeIds.filter(id => !newRoundIncluded.has(id));
+        await Promise.all([
+          ...toExclude.map(id => db.setPlayerIncluded(r.id, id, false)),
+          ...[...newRoundIncluded].map(id => db.setPlayerIncluded(r.id, id, true)),
+        ]);
       }
       
       const fullRound = { ...r, courses: courses.find(c => c.id === parseInt(courseId)) };
       setRounds(prev => [...prev, fullRound]);
-      setNewRoundIncluded(new Set(players.filter(p => p.is_active).map(p => p.id)));
+      setNewRoundIncluded(new Set());
     } catch (e) { setMsg(e.message); }
     finally { setSaving(false); }
   };
@@ -241,7 +248,7 @@ export default function SeasonWizard({ onComplete }) {
     setConfirmDialog({
       open: true,
       title: 'Delete Round?',
-      message: `This will permanently delete Round ${round.round_number} and all associated scores and teams. This action cannot be undone.`,
+      message: `This will permanently delete Round ${round.round_number} and all associated scores. This action cannot be undone.`,
       onConfirm: async () => {
         setSaving(true); setMsg('');
         try {
@@ -255,20 +262,21 @@ export default function SeasonWizard({ onComplete }) {
     });
   };
 
-  // === TEAMS (season-wide) ===
-  const addTeam = async () => {
-    if (!newTeam.player1 || !newTeam.player2) return;
-    setSaving(true); setMsg('');
-    try {
-      await db.createTeam({ player1_id: parseInt(newTeam.player1), player2_id: parseInt(newTeam.player2) });
-      setTeams(await db.getAllTeams());
-      setNewTeam({ player1: '', player2: '' });
-    } catch (e) { setMsg(e.message); }
-    finally { setSaving(false); }
-  };
+  // TEAM COMMENTED OUT: === TEAMS (season-wide) ===
+  // TEAM COMMENTED OUT: const addTeam = async () => {
+  // TEAM COMMENTED OUT:   if (!newTeam.player1 || !newTeam.player2) return;
+  // TEAM COMMENTED OUT:   setSaving(true); setMsg('');
+  // TEAM COMMENTED OUT:   try {
+  // TEAM COMMENTED OUT:     await db.createTeam({ player1_id: parseInt(newTeam.player1), player2_id: parseInt(newTeam.player2) });
+  // TEAM COMMENTED OUT:     setTeams(await db.getAllTeams());
+  // TEAM COMMENTED OUT:     setNewTeam({ player1: '', player2: '' });
+  // TEAM COMMENTED OUT:   } catch (e) { setMsg(e.message); }
+  // TEAM COMMENTED OUT:   finally { setSaving(false); }
+  // TEAM COMMENTED OUT: };
 
   const setupRounds = rounds.filter(r => r.is_setup);
-  const seasonTeams = teams.filter(t => !t.round_id);
+  // TEAM COMMENTED OUT: const seasonTeams = teams.filter(t => !t.round_id);
+  // TEAM COMMENTED OUT: const seasonTeams_UNUSED = teams.filter(t => !t.round_id);
   const activeCourses = courses.filter(c => c.is_active);
   
   // Sort players: enabled first, then disabled
@@ -278,12 +286,12 @@ export default function SeasonWizard({ onComplete }) {
     return a.name.localeCompare(b.name);
   });
 
-  // Helper function to check if a player is already in a team
-  const isPlayerInTeam = (playerId) => {
-    return seasonTeams.some(team => 
-      team.player1?.id === parseInt(playerId) || team.player2?.id === parseInt(playerId)
-    );
-  };
+  // TEAM COMMENTED OUT: Helper function to check if a player is already in a team
+  // TEAM COMMENTED OUT: const isPlayerInTeam = (playerId) => {
+  // TEAM COMMENTED OUT:   return seasonTeams.some(team => 
+  // TEAM COMMENTED OUT:     team.player1?.id === parseInt(playerId) || team.player2?.id === parseInt(playerId)
+  // TEAM COMMENTED OUT:   );
+  // TEAM COMMENTED OUT: };
 
   return (
     <>
@@ -310,9 +318,10 @@ export default function SeasonWizard({ onComplete }) {
               <Golf size={48} weight="duotone" className="text-[#D4AF37] mx-auto mb-4" />
               <h2 className="text-2xl font-sans text-[#D4AF37] mb-3">Season Setup Wizard</h2>
               <p className="text-[#A9C5B4] text-sm max-w-md mx-auto mb-6">
-                Set up your league: add players, courses (with hole par &amp; SI), rounds, and season-wide team pairings.
+                Set up your league: add players, courses (with hole par &amp; SI), and rounds.
               </p>
-              <p className="text-[#A9C5B4]/70 text-xs">Currently configured: {players.length} players &middot; {activeCourses.length} active courses &middot; {setupRounds.length} rounds &middot; {seasonTeams.length} teams</p>
+              {/* TEAM COMMENTED OUT: <p className="text-[#A9C5B4]/70 text-xs">Currently configured: {players.length} players &middot; {activeCourses.length} active courses &middot; {setupRounds.length} rounds &middot; {seasonTeams.length} teams</p> */}
+              <p className="text-[#A9C5B4]/70 text-xs">Currently configured: {players.length} players &middot; {activeCourses.length} active courses &middot; {setupRounds.length} rounds</p>
             </div>
           )}
 
@@ -586,8 +595,8 @@ export default function SeasonWizard({ onComplete }) {
             </div>
           )}
 
-          {/* STEP 4: Season-wide Teams */}
-          {step === 4 && (
+          {/* TEAM COMMENTED OUT: STEP 4: Season-wide Teams */}
+          {/* TEAM COMMENTED OUT: {step === 4 && (
             <div>
               <h3 className="text-sm text-[#A9C5B4] uppercase tracking-wider mb-2 flex items-center gap-2"><UsersThree size={16} className="text-[#D4AF37]" /> Season Team Pairings ({seasonTeams.length})</h3>
               <p className="text-xs text-[#A9C5B4]/70 italic mb-4">Set once — these pairings play together across every round.</p>
@@ -614,10 +623,10 @@ export default function SeasonWizard({ onComplete }) {
                 </div>
               </div>
             </div>
-          )}
+          )} */}
 
-          {/* STEP 5: Complete */}
-          {step === 5 && (
+          {/* STEP 4: Complete */}
+          {step === 4 && (
             <div className="text-center py-8">
               <Check size={48} weight="duotone" className="text-emerald-400 mx-auto mb-4" />
               <h2 className="text-2xl font-sans text-[#D4AF37] mb-3">Season Ready!</h2>
@@ -626,7 +635,7 @@ export default function SeasonWizard({ onComplete }) {
                 <div className="text-center py-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10"><p className="text-xl font-bold text-white">{players.length}</p><p className="text-xs text-[#A9C5B4]">Players</p></div>
                 <div className="text-center py-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10"><p className="text-xl font-bold text-white">{activeCourses.length}</p><p className="text-xs text-[#A9C5B4]">Active Courses</p></div>
                 <div className="text-center py-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10"><p className="text-xl font-bold text-white">{setupRounds.length}</p><p className="text-xs text-[#A9C5B4]">Rounds</p></div>
-                <div className="text-center py-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10"><p className="text-xl font-bold text-white">{seasonTeams.length}</p><p className="text-xs text-[#A9C5B4]">Teams</p></div>
+                {/* TEAM COMMENTED OUT: <div className="text-center py-3 rounded-lg bg-[#051A10]/60 border border-[#D4AF37]/10"><p className="text-xl font-bold text-white">{seasonTeams.length}</p><p className="text-xs text-[#A9C5B4]">Teams</p></div> */}
               </div>
               
               {/* Detailed Setup Information */}
@@ -675,10 +684,10 @@ export default function SeasonWizard({ onComplete }) {
         </div>
 
         {/* Navigation */}
-        {step < 5 && (
+        {step < 4 && (
           <div className="flex justify-between mt-6">
             <button onClick={prev} disabled={step === 0} className="flex items-center gap-1 px-4 py-2 text-sm text-[#A9C5B4] hover:text-white disabled:opacity-30"><ArrowLeft size={16} /> Back</button>
-            <button onClick={next} className="flex items-center gap-1 px-4 py-2 text-sm bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30 rounded-lg hover:bg-[#D4AF37]/30">{step === 4 ? 'Finish' : 'Next'} <ArrowRight size={16} /></button>
+            <button onClick={next} className="flex items-center gap-1 px-4 py-2 text-sm bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30 rounded-lg hover:bg-[#D4AF37]/30">{step === 3 ? 'Finish' : 'Next'} <ArrowRight size={16} /></button>
           </div>
         )}
       </motion.div>

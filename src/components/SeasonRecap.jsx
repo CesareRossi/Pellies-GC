@@ -9,7 +9,7 @@ import { Share, Download, X, Trophy } from '@phosphor-icons/react';
 const RecapCard = React.forwardRef(({ season }, ref) => {
   const s = season?.summary_json || {};
   const champ = s.champion;
-  const team = s.champion_team;
+  // TEAM COMMENTED OUT: const team = s.champion_team;
   const awards = s.awards?.season || {};
   const perRound = s.awards?.per_round || [];
   const beerRounds = perRound.filter(r => r.has_scores && r.beer_hole_winner);
@@ -84,18 +84,18 @@ const RecapCard = React.forwardRef(({ season }, ref) => {
   const champName = { fontSize: 84, color: '#FFFFFF', fontWeight: 700, margin: '0 0 6px', lineHeight: 1 };
   const champScore = { fontSize: 34, color: '#D4AF37', fontWeight: 700, margin: 0, fontFamily: 'Helvetica, Arial, sans-serif' };
 
-  const teamCard = {
-    marginTop: 28,
-    padding: '28px 32px',
-    borderRadius: 22,
-    background: 'rgba(15,44,29,0.85)',
-    border: '1px solid rgba(16,185,129,0.3)',
-    display: 'flex', alignItems: 'center', gap: 20,
-  };
-  const emojiBig = { fontSize: 56 };
-  const teamLabel = { letterSpacing: '0.2em', textTransform: 'uppercase', color: '#6EE7B7', fontSize: 12, marginBottom: 4, fontFamily: 'Helvetica, Arial, sans-serif', fontWeight: 600 };
-  const teamName = { fontSize: 42, color: '#FFFFFF', fontWeight: 600, margin: 0 };
-  const teamPts = { fontSize: 30, color: '#6EE7B7', fontWeight: 700, margin: 0, fontFamily: 'Helvetica, Arial, sans-serif' };
+  // TEAM COMMENTED OUT: const teamCard = {
+  // TEAM COMMENTED OUT:   marginTop: 28,
+  // TEAM COMMENTED OUT:   padding: '28px 32px',
+  // TEAM COMMENTED OUT:   borderRadius: 22,
+  // TEAM COMMENTED OUT:   background: 'rgba(15,44,29,0.85)',
+  // TEAM COMMENTED OUT:   border: '1px solid rgba(16,185,129,0.3)',
+  // TEAM COMMENTED OUT:   display: 'flex', alignItems: 'center', gap: 20,
+  // TEAM COMMENTED OUT: };
+  // TEAM COMMENTED OUT: const emojiBig = { fontSize: 56 };
+  // TEAM COMMENTED OUT: const teamLabel = { letterSpacing: '0.2em', textTransform: 'uppercase', color: '#6EE7B7', fontSize: 12, marginBottom: 4, fontFamily: 'Helvetica, Arial, sans-serif', fontWeight: 600 };
+  // TEAM COMMENTED OUT: const teamName = { fontSize: 42, color: '#FFFFFF', fontWeight: 600, margin: 0 };
+  // TEAM COMMENTED OUT: const teamPts = { fontSize: 30, color: '#6EE7B7', fontWeight: 700, margin: 0, fontFamily: 'Helvetica, Arial, sans-serif' };
 
   const gridAwards = { marginTop: 24, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 };
   const awardCard = (bg, border, color) => ({
@@ -145,7 +145,7 @@ const RecapCard = React.forwardRef(({ season }, ref) => {
         </div>
       </div>
 
-      {team && (
+      {/* TEAM COMMENTED OUT: {team && (
         <div style={teamCard}>
           <div style={emojiBig}>👥</div>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -154,7 +154,7 @@ const RecapCard = React.forwardRef(({ season }, ref) => {
           </div>
           <div style={teamPts}>{team.total ?? 0} pts</div>
         </div>
-      )}
+      )} */}
 
       <div style={gridAwards}>
         <div style={awardCard('rgba(245,158,11,0.12)', 'rgba(245,158,11,0.35)')}>

@@ -411,12 +411,12 @@ export async function setPlayerIncluded(roundId, playerId, included) {
   return setPlayerExcluded(roundId, playerId, !included);
 }
 
-// Who played: active players minus round_exclusions. No exclusions row = everyone active played (legacy).
+// Who played: active players minus round_exclusions. No exclusions row = no one played (new behavior).
 export async function getRoundParticipants(roundId) {
   const players = await getPlayers();
   const activeIds = players.filter(p => p.is_active).map(p => p.id);
   const exclusions = await getRoundExclusions(roundId).catch(() => []);
-  if (exclusions.length === 0) return activeIds;
+  if (exclusions.length === 0) return [];  // Changed: no exclusions = no one played
   const excluded = new Set(exclusions);
   return activeIds.filter(id => !excluded.has(id));
 }
@@ -830,51 +830,100 @@ export async function getLeaderboardData(mode = 'stableford') {
 
   const leaderboard = activePlayers.map(p => {
     const roundScores = playerRoundTotals[p.id] || {};
-    const roundScoresArray = Object.values(roundScores);
-    const total = roundScoresArray.reduce((a, b) => a + b.net, 0);
-    const roundsPlayed = roundScoresArray.length;
-    const average = roundsPlayed > 0 ? total / roundsPlayed : 0;
-    const hasScores = roundsPlayed > 0;
+    
+    // Build array of round scores with metadata for sorting
+    const roundsWithScores = [];
+    for (const r of rounds) {
+      const score = roundScores[r.id];
+      if (score && score.net !== undefined && score.net !== null) {
+        roundsWithScores.push({
+          roundId: r.id,
+          roundNumber: r.round_number,
+          courseName: r.courses?.name || 'Unknown',
+          net: score.net,
+          gross: score.gross,
+          display: score.display
+        });
+      }
+    }
+
+    // Sort rounds based on mode
+    if (mode === 'stroke') {
+      // For stroke: lower net score is better
+      roundsWithScores.sort((a, b) => a.net - b.net);
+    } else {
+      // For stableford: higher points is better
+      roundsWithScores.sort((a, b) => b.net - a.net);
+    }
+
+    // Take top 12 rounds
+    const topRounds = roundsWithScores.slice(0, 12);
+    const topRoundIds = new Set(topRounds.map(r => r.roundId));
+
+    // Calculate ranking metric based on mode
+    let rankingMetric;
+    if (mode === 'stroke') {
+      // For stroke: average of top 12 rounds
+      rankingMetric = topRounds.length > 0 ? topRounds.reduce((sum, r) => sum + r.net, 0) / topRounds.length : 0;
+    } else {
+      // For stableford: total of top 12 rounds
+      rankingMetric = topRounds.reduce((sum, r) => sum + r.net, 0);
+    }
+
+    const hasScores = roundsWithScores.length > 0;
     const roundDetails = {};
     for (const r of rounds) {
       const score = roundScores[r.id];
       const key = `R${r.round_number} ${r.courses?.name || 'Unknown'}`;
+      const isUsed = topRoundIds.has(r.id);
       roundDetails[key] = score ? score.display : '-';
+      // Mark if this round is used in top 12 calculation
+      roundDetails[`_used_${key}`] = isUsed;
       // Add display name for header (without round number)
       roundDetails[`_display_${key}`] = r.courses?.name || 'Unknown';
     }
-    // Return only fields needed for display (exclude internal sorting fields)
-    return { player: p.name, ...roundDetails, total, _average: average, _hasScores: hasScores };
+    
+    // Return only fields needed for display
+    return { 
+      player: p.name, 
+      ...roundDetails, 
+      total: mode === 'stroke' ? rankingMetric.toFixed(2) : rankingMetric,
+      _rankingMetric: rankingMetric,
+      _hasScores: hasScores,
+      _roundsUsed: topRounds.length
+    };
   });
 
-  // Sort by average per round (both modes)
-  // Stroke play: lower average is better
-  // Stableford: higher average is better
+  // Sort by ranking metric
   leaderboard.sort((a, b) => {
     // Players with scores come first
     if (a._hasScores && !b._hasScores) return -1;
     if (!a._hasScores && b._hasScores) return 1;
-    // Both have scores: sort by average
+    // Both have scores: sort by ranking metric
     if (a._hasScores && b._hasScores) {
       if (mode === 'stroke') {
-        return a._average - b._average; // Lower is better for stroke play
+        return a._rankingMetric - b._rankingMetric; // Lower average is better for stroke play
       } else {
-        return b._average - a._average; // Higher is better for Stableford
+        return b._rankingMetric - a._rankingMetric; // Higher total is better for Stableford
       }
     }
     // Neither has scores: maintain original order
     return 0;
   });
+
   // Remove internal sorting fields from final output
   leaderboard.forEach(row => {
-    delete row._average;
+    delete row._rankingMetric;
     delete row._hasScores;
+    delete row._roundsUsed;
   });
+
   assignTiedRanks(leaderboard, 'total');
   return { leaderboard: withRankFirst(leaderboard), rounds };
 }
 
-export async function getTeamLeaderboardData(mode = 'stableford') {
+// TEAM COMMENTED OUT: export async function getTeamLeaderboardData(mode = 'stableford') {
+export async function getTeamLeaderboardData_UNUSED(mode = 'stableford') {
   // Fetch all scores with pagination to handle more than 1000 rows
   const allScores = [];
   let from = 0;
@@ -983,12 +1032,13 @@ export async function getTeamLeaderboardData(mode = 'stableford') {
 
   const teamLeaderboard = Object.values(teamPairsMap).map(team => {
     const roundScores = {};
-    let totalNet = 0;
-    let totalGross = 0;
-    let roundsPlayed = 0;
+    const roundsWithScores = [];
+    
     for (const r of validRounds) {
       if (!team.roundIds.has(r.id)) { 
-        roundScores[r.courses?.name || `R${r.round_number}`] = '-';
+        const key = `R${r.round_number} ${r.courses?.name || 'Unknown'}`;
+        roundScores[key] = '-';
+        roundScores[`_display_${key}`] = r.courses?.name || 'Unknown';
         continue; 
       }
       const holes = roundHolesMap[r.id] || [];
@@ -1001,7 +1051,9 @@ export async function getTeamLeaderboardData(mode = 'stableford') {
       
       // Only count this round if at least one included player has scored
       if (p1HolesScored === 0 && p2HolesScored === 0) {
-        roundScores[r.courses?.name || `R${r.round_number}`] = '-';
+        const key = `R${r.round_number} ${r.courses?.name || 'Unknown'}`;
+        roundScores[key] = '-';
+        roundScores[`_display_${key}`] = r.courses?.name || 'Unknown';
         continue;
       }
 
@@ -1029,70 +1081,92 @@ export async function getTeamLeaderboardData(mode = 'stableford') {
         }
       }
       
+      const key = `R${r.round_number} ${r.courses?.name || 'Unknown'}`;
       if (mode === 'stroke') {
         // Show gross (net) for all rounds in stroke play
-        const key = `R${r.round_number} ${r.courses?.name || 'Unknown'}`;
         roundScores[key] = `${roundGross} (${roundNet})`;
-        // Add display name for header (without round number)
-        roundScores[`_display_${key}`] = r.courses?.name || 'Unknown';
       } else {
-        const key = `R${r.round_number} ${r.courses?.name || 'Unknown'}`;
         roundScores[key] = roundNet;
-        // Add display name for header (without round number)
-        roundScores[`_display_${key}`] = r.courses?.name || 'Unknown';
       }
+      // Add display name for header (without round number)
+      roundScores[`_display_${key}`] = r.courses?.name || 'Unknown';
       
-      totalNet += roundNet;
-      totalGross += roundGross;
-      roundsPlayed++;
+      // Store round data for top 12 selection
+      roundsWithScores.push({
+        roundId: r.id,
+        roundNumber: r.round_number,
+        courseName: r.courses?.name || 'Unknown',
+        net: roundNet,
+        gross: roundGross,
+        key: key
+      });
     }
+
+    // Sort rounds based on mode
+    if (mode === 'stroke') {
+      // For stroke: lower net score is better
+      roundsWithScores.sort((a, b) => a.net - b.net);
+    } else {
+      // For stableford: higher points is better
+      roundsWithScores.sort((a, b) => b.net - a.net);
+    }
+
+    // Take top 12 rounds
+    const topRounds = roundsWithScores.slice(0, 12);
+    const topRoundIds = new Set(topRounds.map(r => r.roundId));
+
+    // Calculate ranking metric based on mode
+    let rankingMetric;
+    if (mode === 'stroke') {
+      // For stroke: average of top 12 rounds
+      rankingMetric = topRounds.length > 0 ? topRounds.reduce((sum, r) => sum + r.net, 0) / topRounds.length : 0;
+    } else {
+      // For stableford: total of top 12 rounds
+      rankingMetric = topRounds.reduce((sum, r) => sum + r.net, 0);
+    }
+
+    // Mark which rounds are used in top 12 calculation
+    for (const r of validRounds) {
+      const key = `R${r.round_number} ${r.courses?.name || 'Unknown'}`;
+      const isUsed = topRoundIds.has(r.id);
+      roundScores[`_used_${key}`] = isUsed;
+    }
+
+    const hasScores = roundsWithScores.length > 0;
+    
     // Return only fields needed for display
     return { 
       player: team.name, 
       ...roundScores, 
-      total: totalNet
+      total: mode === 'stroke' ? rankingMetric.toFixed(2) : rankingMetric,
+      _rankingMetric: rankingMetric,
+      _hasScores: hasScores
     };
   });
 
-  if (mode === 'stroke') {
-    // Stroke play: prioritize teams with scores, then by total (ascending)
-    // For team stroke play, round scores are strings like "72 (65)" or "-"
-    teamLeaderboard.sort((a, b) => {
-      const aRoundKeys = Object.keys(a).filter(k => k !== 'player' && k !== 'total');
-      const bRoundKeys = Object.keys(b).filter(k => k !== 'player' && k !== 'total');
-      // Check if team has actual round scores (strings that are not '-' and contain numbers)
-      const aHasScores = aRoundKeys.some(k => {
-        const val = a[k];
-        return val !== '-' && val !== '' && typeof val === 'string' && /\d/.test(val);
-      });
-      const bHasScores = bRoundKeys.some(k => {
-        const val = b[k];
-        return val !== '-' && val !== '' && typeof val === 'string' && /\d/.test(val);
-      });
-      // Teams with scores come first
-      if (aHasScores && !bHasScores) return -1;
-      if (!aHasScores && bHasScores) return 1;
-      // Both have scores: sort by total (lower is better for stroke play)
-      if (aHasScores && bHasScores) return a.total - b.total;
-      // Neither has scores: maintain original order
-      return 0;
-    });
-  } else {
-    // Stableford: prioritize teams with scores, then by total (descending)
-    teamLeaderboard.sort((a, b) => {
-      const aRoundKeys = Object.keys(a).filter(k => k !== 'player' && k !== 'total');
-      const bRoundKeys = Object.keys(b).filter(k => k !== 'player' && k !== 'total');
-      const aHasScores = aRoundKeys.some(k => a[k] !== '-' && typeof a[k] === 'number');
-      const bHasScores = bRoundKeys.some(k => b[k] !== '-' && typeof b[k] === 'number');
-      // Teams with scores come first
-      if (aHasScores && !bHasScores) return -1;
-      if (!aHasScores && bHasScores) return 1;
-      // Both have scores: sort by total (higher is better for stableford)
-      if (aHasScores && bHasScores) return b.total - a.total;
-      // Neither has scores: maintain original order
-      return 0;
-    });
-  }
+  // Sort by ranking metric
+  teamLeaderboard.sort((a, b) => {
+    // Teams with scores come first
+    if (a._hasScores && !b._hasScores) return -1;
+    if (!a._hasScores && b._hasScores) return 1;
+    // Both have scores: sort by ranking metric
+    if (a._hasScores && b._hasScores) {
+      if (mode === 'stroke') {
+        return a._rankingMetric - b._rankingMetric; // Lower average is better for stroke play
+      } else {
+        return b._rankingMetric - a._rankingMetric; // Higher total is better for Stableford
+      }
+    }
+    // Neither has scores: maintain original order
+    return 0;
+  });
+
+  // Remove internal sorting fields from final output
+  teamLeaderboard.forEach(row => {
+    delete row._rankingMetric;
+    delete row._hasScores;
+  });
+
   assignTiedRanks(teamLeaderboard, 'total');
   return { leaderboard: withRankFirst(teamLeaderboard), rounds };
 }
@@ -1483,16 +1557,24 @@ export async function getAwards() {
 
 export async function getSeasonOverview() {
   // Parallelize all heavy fetches instead of awaiting sequentially (was ~20 sequential DB calls)
-  const [allRounds, allPlayers, stats, lbRes, teamLbRes, scoresRes] = await Promise.all([
+  // TEAM COMMENTED OUT: const [allRounds, allPlayers, stats, lbRes, teamLbRes, scoresRes] = await Promise.all([
+  // TEAM COMMENTED OUT:   getAllRounds(),
+  // TEAM COMMENTED OUT:   getPlayers(),
+  // TEAM COMMENTED OUT:   getPlayerStats(),
+  // TEAM COMMENTED OUT:   getLeaderboardData(),
+  // TEAM COMMENTED OUT:   getTeamLeaderboardData(),
+  // TEAM COMMENTED OUT:   supabase.from('scores').select('player_id')
+  // TEAM COMMENTED OUT: ]);
+  const [allRounds, allPlayers, stats, lbRes, scoresRes] = await Promise.all([
     getAllRounds(),
     getPlayers(),
     getPlayerStats(),
     getLeaderboardData(),
-    getTeamLeaderboardData(),
+    // TEAM COMMENTED OUT: getTeamLeaderboardData(),
     supabase.from('scores').select('player_id')
   ]);
   const { leaderboard, rounds } = lbRes;
-  const { leaderboard: teamLb } = teamLbRes;
+  // TEAM COMMENTED OUT: const { leaderboard: teamLb } = teamLbRes;
   
   // Active players = anyone with at least one score entered (not just completed rounds)
   const uniquePlayerIdsWithScores = new Set((scoresRes.data || []).map(s => s.player_id));
@@ -1505,7 +1587,7 @@ export async function getSeasonOverview() {
 
   const result = {
     top_players: leaderboard.slice(0, 3).map(p => ({ name: p.player, total: p.total, rank: p.rank })),
-    top_team: teamLb[0] ? { name: teamLb[0].player, total: teamLb[0].total } : null,
+    // TEAM COMMENTED OUT: top_team: teamLb[0] ? { name: teamLb[0].player, total: teamLb[0].total } : null,
     active_players: activePlayers, total_players: allPlayers.length,
     courses_played: coursesPlayed, total_courses: rounds.length, total_round_slots: allRounds.length,
     best_round: bestRound, eagle_leader: eagleLeader, birdie_leader: birdieLeader, hio_leader: hioLeader,
@@ -1634,7 +1716,8 @@ export async function getStablefordRoundData(roundId, mode = 'stableford') {
 }
 
 // ===== TEAM ROUND VIEW =====
-export async function getTeamRoundData(roundId, mode = 'stableford') {
+// TEAM COMMENTED OUT: export async function getTeamRoundData(roundId, mode = 'stableford') {
+export async function getTeamRoundData_UNUSED(roundId, mode = 'stableford') {
   const { data: round } = await supabase.from('rounds').select('*, courses(*)').eq('id', roundId).single();
   if (!round) return { name: '', display_name: '', data: [] };
   // Fetch per-round teams first; fall back to season teams if none
@@ -1951,10 +2034,17 @@ export async function archiveAndStartNewSeason(newName) {
   if (!newName || !newName.trim()) throw new Error('New season name is required.');
 
   // 1. Compute the full snapshot from current data
-  const [overview, leaderboardData, teamLb, stats, awards] = await Promise.all([
+  // TEAM COMMENTED OUT: const [overview, leaderboardData, teamLb, stats, awards] = await Promise.all([
+  // TEAM COMMENTED OUT:   getSeasonOverview(),
+  // TEAM COMMENTED OUT:   getLeaderboardData(),
+  // TEAM COMMENTED OUT:   getTeamLeaderboardData(),
+  // TEAM COMMENTED OUT:   getPlayerStats(),
+  // TEAM COMMENTED OUT:   getAwards(),
+  // TEAM COMMENTED OUT: ]);
+  const [overview, leaderboardData, stats, awards] = await Promise.all([
     getSeasonOverview(),
     getLeaderboardData(),
-    getTeamLeaderboardData(),
+    // TEAM COMMENTED OUT: getTeamLeaderboardData(),
     getPlayerStats(),
     getAwards(),
   ]);
@@ -1963,12 +2053,12 @@ export async function archiveAndStartNewSeason(newName) {
     captured_at: new Date().toISOString(),
     overview,
     leaderboard: leaderboardData?.leaderboard || [],
-    team_leaderboard: teamLb?.leaderboard || [],
+    // TEAM COMMENTED OUT: team_leaderboard: teamLb?.leaderboard || [],
     player_stats: stats,
     awards,
     // Convenience lookups so the history card doesn't have to reparse
     champion: leaderboardData?.leaderboard?.[0] || null,
-    champion_team: teamLb?.leaderboard?.[0] || null,
+    // TEAM COMMENTED OUT: champion_team: teamLb?.leaderboard?.[0] || null,
   };
 
   // 2. Close the current season

@@ -53,33 +53,33 @@ function RoundFinesRow({ round, rounds, index }) {
         if (!mounted) return;
         setRoundData(data);
         
-        // Get team data for losing team
-        const teams = await db.getTeamRoundData(round.round_id, 'stableford');
-        if (!mounted) return;
-        if (teams?.data && teams.data.length > 0) {
-          // The data is table format - last row is TOTALS with team names as keys
-          const totalRow = teams.data[teams.data.length - 1];
-          if (totalRow && totalRow.Team === 'Total') {
-            // Extract team names (keys that don't start with underscore or are Team/Par/SI)
-            const teamNames = Object.keys(totalRow).filter(k => k !== 'Team' && k !== 'Par' && k !== 'SI' && !k.endsWith('_contributor'));
-            
-            // Find team with lowest score (losing team for stableford)
-            let losingTeam = null;
-            teamNames.forEach(teamName => {
-              const total = totalRow[teamName] || 0;
-              if (!losingTeam || total < losingTeam.total) {
-                // Parse player names from "Player1 and Player2" format
-                const players = teamName.split(' and ');
-                losingTeam = { 
-                  name: teamName, 
-                  total,
-                  players
-                };
-              }
-            });
-            setTeamData(losingTeam);
-          }
-        }
+        // TEAM COMMENTED OUT: Get team data for losing team
+        // TEAM COMMENTED OUT: const teams = await db.getTeamRoundData(round.round_id, 'stableford');
+        // TEAM COMMENTED OUT: if (!mounted) return;
+        // TEAM COMMENTED OUT: if (teams?.data && teams.data.length > 0) {
+        // TEAM COMMENTED OUT:   // The data is table format - last row is TOTALS with team names as keys
+        // TEAM COMMENTED OUT:   const totalRow = teams.data[teams.data.length - 1];
+        // TEAM COMMENTED OUT:   if (totalRow && totalRow.Team === 'Total') {
+        // TEAM COMMENTED OUT:     // Extract team names (keys that don't start with underscore or are Team/Par/SI)
+        // TEAM COMMENTED OUT:     const teamNames = Object.keys(totalRow).filter(k => k !== 'Team' && k !== 'Par' && k !== 'SI' && !k.endsWith('_contributor'));
+        // TEAM COMMENTED OUT:     
+        // TEAM COMMENTED OUT:     // Find team with lowest score (losing team for stableford)
+        // TEAM COMMENTED OUT:     let losingTeam = null;
+        // TEAM COMMENTED OUT:     teamNames.forEach(teamName => {
+        // TEAM COMMENTED OUT:       const total = totalRow[teamName] || 0;
+        // TEAM COMMENTED OUT:       if (!losingTeam || total < losingTeam.total) {
+        // TEAM COMMENTED OUT:         // Parse player names from "Player1 and Player2" format
+        // TEAM COMMENTED OUT:         const players = teamName.split(' and ');
+        // TEAM COMMENTED OUT:         losingTeam = { 
+        // TEAM COMMENTED OUT:           name: teamName, 
+        // TEAM COMMENTED OUT:           total,
+        // TEAM COMMENTED OUT:           players
+        // TEAM COMMENTED OUT:         };
+        // TEAM COMMENTED OUT:       }
+        // TEAM COMMENTED OUT:     });
+        // TEAM COMMENTED OUT:     setTeamData(losingTeam);
+        // TEAM COMMENTED OUT:   }
+        // TEAM COMMENTED OUT: }
       } catch (e) {
         console.error('Failed to load round fines data', e);
       } finally {

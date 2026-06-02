@@ -73,7 +73,7 @@ const Overview = ({ data, onNav, archivedSeasons = [], onShareRecap }) => {
           </h3>
           <div className="space-y-4">
             <HR icon={<Trophy size={20} className="text-[#D4AF37]" />} title="Leader" value={data.top_players[0]?.name || '-'} detail={`${data.top_players[0]?.total || 0} pts`} />
-            <HR icon={<UsersThree size={20} className="text-emerald-400" />} title="Top Team" value={data.top_team?.name || '-'} detail={`${data.top_team?.total || 0} pts`} />
+            {/* TEAM COMMENTED OUT: <HR icon={<UsersThree size={20} className="text-emerald-400" />} title="Top Team" value={data.top_team?.name || '-'} detail={`${data.top_team?.total || 0} pts`} /> */}
             <HR icon={<Star size={20} className="text-amber-400" />} title="Best Round" value={data.best_round.player} detail={`${data.best_round.score} pts`} />
             <HR icon={<Fire size={20} className="text-orange-400" />} title="Eagles" value={data.eagle_leader.player || '-'} detail={`${data.eagle_leader.count}`} />
             <HR icon={<Flag size={20} className="text-green-400" />} title="Birdies" value={data.birdie_leader.player || '-'} detail={`${data.birdie_leader.count}`} />
@@ -84,7 +84,7 @@ const Overview = ({ data, onNav, archivedSeasons = [], onShareRecap }) => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <QN icon={<Trophy size={24} />} title="Leaderboards" desc="Rankings" onClick={() => onNav('league_lb')} />
         <QN icon={<ChartLine size={24} />} title="Individual Rounds" desc="Round scores" onClick={() => onNav('stableford')} />
-        <QN icon={<UsersThree size={24} />} title="Teams" desc="Team scoring" onClick={() => onNav('teams')} />
+        {/* TEAM COMMENTED OUT: <QN icon={<UsersThree size={24} />} title="Teams" desc="Team scoring" onClick={() => onNav('teams')} /> */}
         <QN icon={<User size={24} />} title="Player Stats" desc="Breakdowns" onClick={() => onNav('stats')} />
       </div>
 
@@ -96,7 +96,7 @@ const Overview = ({ data, onNav, archivedSeasons = [], onShareRecap }) => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {archivedSeasons.slice(0, 6).map((s) => {
               const champ = s.summary_json?.champion;
-              const team = s.summary_json?.champion_team;
+              // TEAM COMMENTED OUT: const team = s.summary_json?.champion_team;
               const spoon = Array.isArray(s.summary_json?.awards?.season?.wooden_spoon_leader)
                 ? s.summary_json.awards.season.wooden_spoon_leader[0]?.player
                 : s.summary_json?.awards?.season?.wooden_spoon_leader?.player;
@@ -125,12 +125,12 @@ const Overview = ({ data, onNav, archivedSeasons = [], onShareRecap }) => {
                         <span className="text-white font-semibold truncate max-w-[60%]">{champ.player || champ.Player || '—'}</span>
                       </div>
                     )}
-                    {team && (
+                    {/* TEAM COMMENTED OUT: {team && (
                       <div className="flex items-center justify-between">
                         <span className="text-[#A9C5B4]/80">👥 Top Team</span>
                         <span className="text-white font-semibold truncate max-w-[60%]">{team.player || team.Team || team.team || '—'}</span>
                       </div>
-                    )}
+                    )} */}
                     {spoon && (
                       <div className="flex items-center justify-between">
                         <span className="text-[#A9C5B4]/80">🥄 Wooden Spoon </span>
