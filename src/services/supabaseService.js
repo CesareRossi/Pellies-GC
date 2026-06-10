@@ -805,11 +805,11 @@ export async function getLeaderboardData(mode = 'stableford') {
           const hcStrokes = handicapStrokes[s.hole_number] || 0;
           netStrokes += Math.max(0, (s.strokes || 0) - hcStrokes);
         }
-        // Store net strokes for total, show gross (net) in details for all rounds
+        // Store net strokes for total, show net (gross) in details for all rounds
         playerRoundTotals[p.id][r.id] = {
           net: netStrokes,
           gross: grossStrokes,
-          display: `${grossStrokes} (${netStrokes})`
+          display: `${netStrokes} (${grossStrokes})`
         };
       } else {
         // Stableford (default)
@@ -1233,8 +1233,8 @@ export async function getPlayerStats() {
         roundTotals[s.round_id] += pts;
       }
 
-      // Use net score vs par for accurate eagle/birdie/par/bogey stats
-      const diff = netStrokes - hole.par;
+      // Use gross score vs par for accurate eagle/birdie/par/bogey stats (no handicap)
+      const diff = s.strokes - hole.par;
       if (s.strokes === 1) hio++; // Hole in one always counts
       else if (diff <= -3) albatross++;
       else if (diff === -2) eagles++;
@@ -1662,10 +1662,16 @@ export async function getStablefordRoundData(roundId, mode = 'stableford') {
   }
 
   const playerTotals = {};
+  const playerNetTotals = {}; // For sorting by net score
   playerNames.forEach(p => {
     if (mode === 'stroke') {
-      // Sum of net strokes for stroke play
+      // Sum of gross strokes for stroke play (raw score)
       playerTotals[p] = holes.reduce((sum, h) => {
+        const stroke = strokeMap[`${p}_${h.hole_number}`];
+        return sum + (stroke?.gross || 0);
+      }, 0);
+      // Sum of net strokes for sorting
+      playerNetTotals[p] = holes.reduce((sum, h) => {
         const stroke = strokeMap[`${p}_${h.hole_number}`];
         return sum + (stroke?.net || 0);
       }, 0);
@@ -1675,10 +1681,10 @@ export async function getStablefordRoundData(roundId, mode = 'stableford') {
     }
   });
   
-  // Sort players - for stroke play lower is better, for stableford higher is better
+  // Sort players - for stroke play lower net is better, for stableford higher is better
   const sortedPlayers = [...playerNames].sort((a, b) => {
     if (mode === 'stroke') {
-      return (playerTotals[a] || 0) - (playerTotals[b] || 0);
+      return (playerNetTotals[a] || 0) - (playerNetTotals[b] || 0);
     }
     return (playerTotals[b] || 0) - (playerTotals[a] || 0);
   });
@@ -1689,8 +1695,8 @@ export async function getStablefordRoundData(roundId, mode = 'stableford') {
     for (const p of sortedPlayers) {
       if (mode === 'stroke') {
         const stroke = strokeMap[`${p}_${h.hole_number}`];
-        // For stroke play, show only net strokes (number)
-        row[p] = stroke ? stroke.net : '';
+        // For stroke play, show gross strokes (raw score)
+        row[p] = stroke ? stroke.gross : '';
       } else {
         row[p] = stabMap[`${p}_${h.hole_number}`] ?? '';
       }
