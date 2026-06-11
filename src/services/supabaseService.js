@@ -357,6 +357,13 @@ export async function deleteRound(id) {
   const { error: e3 } = await supabase.from('teams').delete().eq('round_id', id);
   if (e3) throw new Error(`Failed to clear teams: ${e3.message}`);
   await supabase.from('round_exclusions').delete().eq('round_id', id);
+  
+  // Invalidate cache for this round
+  handicapSnapshotCache.delete(`round_${id}`);
+  
+  // Update seasons table to remove reference to this round
+  await supabase.from('seasons').update({ current_round_id: null }).eq('current_round_id', id);
+  
   const { error } = await supabase.from('rounds').delete().eq('id', id);
   if (error) throw new Error(`Failed to delete round: ${error.message}`);
 }
@@ -380,8 +387,76 @@ export async function setPlayerExcluded(roundId, playerId, excluded) {
     const { error } = await supabase.from('round_exclusions').upsert({ round_id: roundId, player_id: playerId });
     if (error) throw error;
   } else {
+    // When including a player, save their current handicap snapshot
+    const players = await getPlayers();
+    const player = players.find(p => p.id === playerId);
+    const handicapIndex = player?.handicap || 0;
+    
     const { error } = await supabase.from('round_exclusions').delete().eq('round_id', roundId).eq('player_id', playerId);
     if (error) throw error;
+    
+    // Save handicap snapshot to a new table for round player handicaps
+    await supabase.from('round_player_handicaps').upsert({ 
+      round_id: roundId, 
+      player_id: playerId, 
+      handicap_index: handicapIndex 
+    });
+    
+    // Invalidate cache for this round
+    handicapSnapshotCache.delete(`round_${roundId}`);
+  }
+}
+
+// Simple in-memory cache for handicap snapshots
+const handicapSnapshotCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export async function getPlayerHandicapSnapshot(roundId, playerId) {
+  try {
+    const { data, error } = await supabase
+      .from('round_player_handicaps')
+      .select('handicap_index')
+      .eq('round_id', roundId)
+      .eq('player_id', playerId)
+      .maybeSingle();
+    if (error) return null;
+    return data?.handicap_index;
+  } catch (e) {
+    // Table might not exist yet, return null to fall back to current handicap
+    return null;
+  }
+}
+
+export async function getRoundHandicapSnapshots(roundId) {
+  const cacheKey = `round_${roundId}`;
+  const cached = handicapSnapshotCache.get(cacheKey);
+  
+  // Return cached data if still valid
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+  
+  try {
+    const { data, error } = await supabase
+      .from('round_player_handicaps')
+      .select('player_id, handicap_index')
+      .eq('round_id', roundId);
+    if (error) return {};
+    const snapshotMap = {};
+    for (const row of data || []) {
+      snapshotMap[row.player_id] = row.handicap_index;
+    }
+    
+    // Cache the result
+    handicapSnapshotCache.set(cacheKey, {
+      data: snapshotMap,
+      timestamp: Date.now()
+    });
+    
+    return snapshotMap;
+  } catch (e) {
+    // Table might not exist yet, return empty map
+    return {};
   }
 }
 
@@ -778,13 +853,23 @@ export async function getLeaderboardData(mode = 'stableford') {
   const activePlayerIds = activePlayers.map(p => p.id);
   const includedByRound = buildIncludedByRound(validRounds, exclusionsRes.data || [], activePlayerIds);
 
+  // Batch fetch handicap snapshots for all rounds
+  const handicapSnapshotMap = {};
+  for (const r of validRounds) {
+    handicapSnapshotMap[r.id] = await getRoundHandicapSnapshots(r.id);
+  }
+
   const playerRoundTotals = {};
   for (const p of activePlayers) {
     playerRoundTotals[p.id] = {};
     for (const r of validRounds) {
       if (!isPlayerIncluded(includedByRound, r.id, p.id)) continue;
 
-      const courseHandicap = calcCourseHandicap(p.handicap, r.courses?.slope, r.courses?.rating, r.courses?.par);
+      // Use batch-fetched handicap snapshot or fall back to current handicap
+      const handicapSnapshot = handicapSnapshotMap[r.id]?.[p.id];
+      const handicapIndex = handicapSnapshot !== undefined ? handicapSnapshot : p.handicap;
+
+      const courseHandicap = calcCourseHandicap(handicapIndex, r.courses?.slope, r.courses?.rating, r.courses?.par);
       const holes = roundHolesMap[r.id] || [];
       const handicapStrokes = distributeHandicapStrokes(courseHandicap, holes);
 
@@ -962,6 +1047,12 @@ export async function getTeamLeaderboardData_UNUSED(mode = 'stableford') {
   const activePlayerIds = activePlayers.map(p => p.id);
   const includedByRound = buildIncludedByRound(validRounds, exclusionsRes.data || [], activePlayerIds);
 
+  // Batch fetch handicap snapshots for all rounds
+  const handicapSnapshotMap = {};
+  for (const r of validRounds) {
+    handicapSnapshotMap[r.id] = await getRoundHandicapSnapshots(r.id);
+  }
+
   const playerMap = {};
   for (const p of activePlayers) playerMap[p.id] = p;
 
@@ -984,8 +1075,12 @@ export async function getTeamLeaderboardData_UNUSED(mode = 'stableford') {
     const cacheKey = `${s.round_id}_${s.player_id}`;
 
     if (!hcCache[cacheKey]) {
+      // Use batch-fetched handicap snapshot or fall back to current handicap
+      const handicapSnapshot = handicapSnapshotMap[s.round_id]?.[s.player_id];
+      const handicapIndex = handicapSnapshot !== undefined ? handicapSnapshot : player.handicap;
+
       const ch = calcCourseHandicap(
-        player.handicap,
+        handicapIndex,
         round.courses?.slope,
         round.courses?.rating,
         round.courses?.par
@@ -1202,6 +1297,12 @@ export async function getPlayerStats() {
   const roundCourseMap = {};
   for (const r of rounds) roundCourseMap[r.id] = r.courses?.name || `Round ${r.round_number}`;
 
+  // Batch fetch handicap snapshots for all rounds
+  const handicapSnapshotMap = {};
+  for (const r of rounds) {
+    handicapSnapshotMap[r.id] = await getRoundHandicapSnapshots(r.id);
+  }
+
   const stats = [];
   for (const p of players) {
     const pScores = (allScores || []).filter(s => s.player_id === p.id);
@@ -1221,7 +1322,11 @@ export async function getPlayerStats() {
       const round = roundMap[s.round_id];
       let netStrokes = s.strokes;
       if (round) {
-        const ch = calcCourseHandicap(p.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
+        // Use batch-fetched handicap snapshot or fall back to current handicap
+        const handicapSnapshot = handicapSnapshotMap[s.round_id]?.[p.id];
+        const handicapIndex = handicapSnapshot !== undefined ? handicapSnapshot : p.handicap;
+
+        const ch = calcCourseHandicap(handicapIndex, round.courses?.slope, round.courses?.rating, round.courses?.par);
         const holes = roundHolesMap[s.round_id] || [];
         const hcStrokes = distributeHandicapStrokes(ch, holes);
         netStrokes = s.strokes - (hcStrokes[s.hole_number] || 0);
@@ -1320,6 +1425,12 @@ export async function getAwards() {
   const { holesMap, roundHolesMap } = await fetchHolesForRounds(rounds);
   const nameById = Object.fromEntries(players.map(p => [p.id, p.name]));
 
+  // Batch fetch handicap snapshots for all rounds
+  const handicapSnapshotMap = {};
+  for (const r of rounds) {
+    handicapSnapshotMap[r.id] = await getRoundHandicapSnapshots(r.id);
+  }
+
   // Per-player, per-round Stableford totals and splits
   const perPR = {};
   for (const p of players) {
@@ -1327,7 +1438,12 @@ export async function getAwards() {
     for (const r of rounds) {
       const holes = (roundHolesMap[r.id] || []).slice().sort((a, b) => a.hole_number - b.hole_number);
       if (holes.length === 0) continue;
-      const ch = calcCourseHandicap(p.handicap, r.courses?.slope, r.courses?.rating, r.courses?.par);
+      
+      // Use batch-fetched handicap snapshot or fall back to current handicap
+      const handicapSnapshot = handicapSnapshotMap[r.id]?.[p.id];
+      const handicapIndex = handicapSnapshot !== undefined ? handicapSnapshot : p.handicap;
+      
+      const ch = calcCourseHandicap(handicapIndex, r.courses?.slope, r.courses?.rating, r.courses?.par);
       const hcStrokes = distributeHandicapStrokes(ch, holes);
       const pScores = allScores.filter(s => s.player_id === p.id && s.round_id === r.id);
       if (pScores.length === 0) continue;
@@ -1401,7 +1517,12 @@ export async function getAwards() {
         for (const s of jokerScores) {
           const player = players.find(p => p.id === s.player_id);
           if (!player) continue;
-          const ch = calcCourseHandicap(player.handicap, r.courses?.slope, r.courses?.rating, r.courses?.par);
+          
+          // Use batch-fetched handicap snapshot or fall back to current handicap
+          const handicapSnapshot = handicapSnapshotMap[r.id]?.[s.player_id];
+          const handicapIndex = handicapSnapshot !== undefined ? handicapSnapshot : player.handicap;
+          
+          const ch = calcCourseHandicap(handicapIndex, r.courses?.slope, r.courses?.rating, r.courses?.par);
           const hcMap = distributeHandicapStrokes(ch, holesForRound);
           const basePts = calcStablefordPoints(s.strokes, hole.par, hcMap[s.hole_number] || 0);
           if (!best || basePts > best.bonus) best = { name: nameById[s.player_id] || '?', bonus: basePts };
@@ -1457,7 +1578,12 @@ export async function getAwards() {
     for (const s of jokerScores) {
       const player = players.find(p => p.id === s.player_id);
       if (!player) continue;
-      const ch = calcCourseHandicap(player.handicap, r.courses?.slope, r.courses?.rating, r.courses?.par);
+      
+      // Use batch-fetched handicap snapshot or fall back to current handicap
+      const handicapSnapshot = handicapSnapshotMap[r.id]?.[s.player_id];
+      const handicapIndex = handicapSnapshot !== undefined ? handicapSnapshot : player.handicap;
+      
+      const ch = calcCourseHandicap(handicapIndex, r.courses?.slope, r.courses?.rating, r.courses?.par);
       const hcMap = distributeHandicapStrokes(ch, holesForRound);
       const basePts = calcStablefordPoints(s.strokes, hole.par, hcMap[s.hole_number] || 0);
       // Bonus is the base points (since joker doubles: total = base*2, so bonus = base)
@@ -1618,7 +1744,7 @@ export async function getStablefordRoundData(roundId, mode = 'stableford') {
     
     const [holes, scoresRes, participantIds] = await Promise.all([
       holesForRound(round),
-      supabase.from('scores').select('*, players(name, handicap)').eq('round_id', roundId),
+      supabase.from('scores').select('*, players(id, name, handicap)').eq('round_id', roundId),
       getRoundParticipants(roundId),
     ]);
     const scores = scoresRes.data || [];
@@ -1633,6 +1759,9 @@ export async function getStablefordRoundData(roundId, mode = 'stableford') {
     const activeScores = scores.filter(s => activePlayerIds.has(s.player_id) && participantSet.has(s.player_id));
     const playerNames = [...new Set(activeScores.map(s => s.players.name))];
 
+    // Batch fetch handicap snapshots for this round
+    const handicapSnapshotMap = await getRoundHandicapSnapshots(roundId);
+
   // Build maps for both stableford points and stroke play
   const stabMap = {};
   const strokeMap = {}; // For stroke play: stores {gross, net}
@@ -1641,7 +1770,12 @@ export async function getStablefordRoundData(roundId, mode = 'stableford') {
   for (const s of activeScores) {
     const hole = holes.find(h => h.hole_number === s.hole_number);
     if (!hole) continue;
-    const ch = calcCourseHandicap(s.players.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
+    
+    // Use batch-fetched handicap snapshot or fall back to current handicap
+    const handicapSnapshot = handicapSnapshotMap[s.players.id];
+    const handicapIndex = handicapSnapshot !== undefined ? handicapSnapshot : s.players.handicap;
+    
+    const ch = calcCourseHandicap(handicapIndex, round.courses?.slope, round.courses?.rating, round.courses?.par);
     const hcStrokes = distributeHandicapStrokes(ch, holes);
     
     // Store course handicap for this player (only once per player)
@@ -1751,6 +1885,9 @@ export async function getTeamRoundData_UNUSED(roundId, mode = 'stableford') {
 
   if (!holes || holes.length === 0) return { name: '', display_name: '', data: [] };
 
+  // Batch fetch handicap snapshots for this round
+  const handicapSnapshotMap = await getRoundHandicapSnapshots(roundId);
+
   // Build maps for both stableford points and stroke play
   const stabMap = {};
   const strokeMap = {};
@@ -1759,7 +1896,12 @@ export async function getTeamRoundData_UNUSED(roundId, mode = 'stableford') {
   for (const s of activeScores) {
     const hole = holes.find(h => h.hole_number === s.hole_number);
     if (!hole) continue;
-    const ch = calcCourseHandicap(s.players.handicap, round.courses?.slope, round.courses?.rating, round.courses?.par);
+    
+    // Use batch-fetched handicap snapshot or fall back to current handicap
+    const handicapSnapshot = handicapSnapshotMap[s.player_id];
+    const handicapIndex = handicapSnapshot !== undefined ? handicapSnapshot : s.players.handicap;
+    
+    const ch = calcCourseHandicap(handicapIndex, round.courses?.slope, round.courses?.rating, round.courses?.par);
     const hcStrokes = distributeHandicapStrokes(ch, holes);
     
     // Store course handicap for this player (keyed by player_id for teams)

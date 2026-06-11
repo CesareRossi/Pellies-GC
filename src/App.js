@@ -214,7 +214,7 @@ function App() {
     try { await db.signOut(); } catch (_) {}
     setUser(null);
     setProfile(null);
-    routerNavigate('/');
+    navigate('/');
   };
 
   const role = profile?.role || 'guest';
