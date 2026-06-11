@@ -22,16 +22,16 @@ const DataTable = ({ data }) => {
   
   return (
     <div className="rounded-lg border border-[#D4AF37]/20 bg-[#0F2C1D]/80 backdrop-blur-md overflow-hidden shadow-2xl" data-testid="table-container">
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
         <table className="w-full">
-          <thead>
-            <tr className="bg-[#0A2A1A] border-b border-[#D4AF37]/30">
+          <thead className="sticky top-0 z-10 bg-[#0A2A1A]">
+            <tr className="border-b border-[#D4AF37]/30">
               {headers.map((h, i) => {
                 // TEAM COMMENTED OUT: const isName = h.toLowerCase() === 'player' || h.toLowerCase() === 'team';
                 const isName = h.toLowerCase() === 'player';
                 const displayHeader = headerDisplayMap[h] || h;
                 return (
-                  <th key={i} className={`py-4 px-4 text-xs font-sans tracking-[0.15em] uppercase text-[#A9C5B4] ${isName ? 'text-left' : 'text-center'}`}>
+                  <th key={i} className={`py-4 px-4 text-xs font-sans tracking-[0.15em] uppercase text-[#A9C5B4] ${isName ? 'text-left sticky left-0 z-20 bg-[#0A2A1A]' : 'text-center'}`}>
                     {displayHeader}
                   </th>
                 );
@@ -52,7 +52,7 @@ const DataTable = ({ data }) => {
                     const isRankCol = k.toLowerCase() === 'rank';
                     const isUsed = row[`_used_${k}`] === true;
                     return (
-                      <td key={ci} className={`py-3 px-4 text-sm font-sans text-white ${isName ? 'text-left' : 'text-center'} ${isUsed ? 'bg-[#D4AF37]/15' : ''}`}>
+                      <td key={ci} className={`py-3 px-4 text-sm font-sans text-white ${isName ? 'text-left sticky left-0 z-20 bg-[#0F2C1D]' : 'text-center'} ${isUsed ? 'bg-[#D4AF37]/15' : ''}`}>
                         <div className={`flex items-center gap-2 ${isName ? '' : 'justify-center'}`}>
                           {ci === 0 && isTopThree && <span className="inline-flex items-center justify-center rounded-full bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/40 px-2 py-0.5 text-xs font-bold">#{numericRank}</span>}
                           <span>{isRankCol && rankDisp ? rankDisp : String(v)}</span>
