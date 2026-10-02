@@ -106,13 +106,41 @@ const GolfScorecard = ({ data, title, currentUser = null, jokerHole = null, beer
   return (
     <div className="golf-scorecard">
       {title && (
-        <div className="text-center mb-8">
-          <h2 className="text-3xl font-sans font-bold text-[#D4AF37] mb-2">{title}</h2>
+        <div className="mb-7 text-center">
+          <h2 className="pg-display pg-gold-text text-[30px]">{title}</h2>
         </div>
       )}
 
+      {/* Legend — the circle/square coding was previously undocumented */}
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        {[
+          { cls: 'rounded-full bg-[#D4AF37] border-[#D4AF37]', label: mode === 'stroke' ? 'Eagle +' : '4+ pts' },
+          { cls: 'rounded-full bg-emerald-400 border-emerald-400', label: mode === 'stroke' ? 'Birdie' : '3 pts' },
+          { cls: 'bg-white border-white', label: mode === 'stroke' ? 'Par' : '2 pts' },
+          { cls: 'bg-[#051A10] border-white', label: mode === 'stroke' ? 'Bogey +' : '1 pt' },
+          { cls: 'rounded-full bg-[#051A10] border-red-500', label: '0 pts' },
+        ].map((l) => (
+          <span key={l.label} className="flex items-center gap-1.5 text-[10.5px] text-[#A9C5B4]">
+            <span className={`inline-block h-3.5 w-3.5 border-2 ${l.cls}`} />
+            {l.label}
+          </span>
+        ))}
+        {jokerHole && (
+          <span className="flex items-center gap-1.5 text-[10.5px] text-purple-300">
+            <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-purple-500" />
+            Joker hole {jokerHole}
+          </span>
+        )}
+        {beerHole && (
+          <span className="flex items-center gap-1.5 text-[10.5px] text-amber-300">
+            <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-amber-500" />
+            Beer hole {beerHole}
+          </span>
+        )}
+      </div>
+
       {/* Scorecard Grid with horizontal scrolling */}
-      <div className="relative overflow-x-auto rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md shadow-2xl">
+      <div className="pg-card pg-scroll relative overflow-x-auto">
         <div className="min-w-max isolate">
         
         {/* Header Row - PLAYER | HOLE NUMBERS 1-9 | OUT | HOLE NUMBERS 10-18 | IN | TOT */}

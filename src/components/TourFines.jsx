@@ -204,7 +204,7 @@ export default function TourFines({ rounds }) {
       <div className="space-y-2">
         {completedRounds.map((round, i) => (
           <RoundFinesRow 
-            key={round.round_number} 
+            key={round.round_id ?? `r${round.round_number}-${i}`}
             round={round} 
             rounds={rounds}
             index={i} 

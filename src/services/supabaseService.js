@@ -196,7 +196,43 @@ export async function getAllPlayers() {
 export async function createPlayer(player) {
   const { data, error } = await supabase.from('players').insert(player).select().single();
   if (error) throw error;
+
+  // Participation is stored as exclusions, so "absent from the exclusion list"
+  // reads as "played". Without this, a player added mid-season is silently
+  // treated as having played every round that already exists — which is what
+  // left four players marked as playing rounds from before they joined.
+  //
+  // The Edit Round form already promises "New players are not included until
+  // you add them here"; this is what makes that true. Rounds created later
+  // start from an explicit selection, so they are unaffected.
+  await excludePlayerFromExistingRounds(data.id);
+
   return data;
+}
+
+/**
+ * Marks a player as not playing every round that currently exists.
+ * Best-effort: a failure here must not lose the newly created player, so it
+ * is logged rather than thrown.
+ */
+export async function excludePlayerFromExistingRounds(playerId) {
+  try {
+    const { data: rounds, error } = await supabase.from('rounds').select('id');
+    if (error) throw error;
+    if (!rounds || rounds.length === 0) return 0;
+
+    const rows = rounds.map((r) => ({ round_id: r.id, player_id: playerId }));
+    const { error: insErr } = await supabase
+      .from('round_exclusions')
+      .upsert(rows, { onConflict: 'round_id,player_id' });
+    if (insErr) throw insErr;
+
+    for (const r of rounds) handicapSnapshotCache.delete(`round_${r.id}`);
+    return rows.length;
+  } catch (e) {
+    console.error('Could not exclude new player from existing rounds:', e);
+    return 0;
+  }
 }
 
 export async function updatePlayer(id, updates) {
@@ -386,6 +422,9 @@ export async function setPlayerExcluded(roundId, playerId, excluded) {
   if (excluded) {
     const { error } = await supabase.from('round_exclusions').upsert({ round_id: roundId, player_id: playerId });
     if (error) throw error;
+    // Participation is derived from this cache when a round has no exclusions,
+    // so it has to be dropped on every change, not just on include.
+    handicapSnapshotCache.delete(`round_${roundId}`);
   } else {
     // When including a player, save their current handicap snapshot
     const players = await getPlayers();
@@ -460,38 +499,143 @@ export async function getRoundHandicapSnapshots(roundId) {
   }
 }
 
+/**
+ * Every round's handicap snapshots in one query, as { roundId: { playerId: hc } }.
+ *
+ * The per-round getRoundHandicapSnapshots() was being called in a sequential
+ * `for (const r of rounds) await ...` loop by the leaderboard, player stats and
+ * awards builders. With 38 rounds that was 38 serial round-trips per builder —
+ * 66 requests and ~15s of request time on a season overview load. One query
+ * replaces all of them.
+ *
+ * Shape matches the per-round version, so callers keep doing
+ * `map[roundId]?.[playerId]` and fall back to the live handicap when absent.
+ */
+export async function getAllRoundHandicapSnapshots() {
+  const byRound = {};
+  try {
+    const pageSize = 1000;
+    let from = 0;
+    for (;;) {
+      const { data, error } = await withTimeout(
+        supabase
+          .from('round_player_handicaps')
+          .select('round_id, player_id, handicap_index')
+          .range(from, from + pageSize - 1),
+        15000,
+        'handicap-snapshots'
+      );
+      if (error) return byRound;
+      if (!data || data.length === 0) break;
+      for (const row of data) {
+        if (!byRound[row.round_id]) byRound[row.round_id] = {};
+        byRound[row.round_id][row.player_id] = row.handicap_index;
+      }
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+  } catch (e) {
+    // Table may not exist yet — callers fall back to current handicaps
+    return byRound;
+  }
+  return byRound;
+}
+
 export async function getRoundInclusions(roundId) {
   return getRoundParticipants(roundId);
 }
 
+// Flat [{ round_id, player_id }] of who played each round — drives the
+// "N playing" count in the admin round list.
+//
+// Mirrors getRoundParticipants: rounds with exclusions resolve from those,
+// and rounds without any fall back to the round_player_handicaps rows so an
+// all-players round is not reported as empty.
 export async function getAllRoundInclusions() {
-  const [exclusions, players] = await Promise.all([getAllRoundExclusions(), getPlayers()]);
-  if (!exclusions.length) return [];
+  const [exclusions, players, pickedRows] = await Promise.all([
+    getAllRoundExclusions(),
+    getPlayers(),
+    getAllRoundPlayerPicks(),
+  ]);
   const activeIds = players.filter(p => p.is_active).map(p => p.id);
+  const activeSet = new Set(activeIds);
+
   const excludedByRound = {};
   for (const row of exclusions) {
     if (!excludedByRound[row.round_id]) excludedByRound[row.round_id] = new Set();
     excludedByRound[row.round_id].add(row.player_id);
   }
+
+  const pickedByRound = {};
+  for (const row of pickedRows) {
+    if (!pickedByRound[row.round_id]) pickedByRound[row.round_id] = new Set();
+    pickedByRound[row.round_id].add(row.player_id);
+  }
+
+  const roundIds = new Set([
+    ...Object.keys(excludedByRound).map(Number),
+    ...Object.keys(pickedByRound).map(Number),
+  ]);
+
   const rows = [];
-  for (const [roundId, excluded] of Object.entries(excludedByRound)) {
-    for (const playerId of activeIds) {
-      if (!excluded.has(playerId)) rows.push({ round_id: Number(roundId), player_id: playerId });
+  for (const roundId of roundIds) {
+    const excluded = excludedByRound[roundId];
+    if (excluded?.size) {
+      for (const playerId of activeIds) {
+        if (!excluded.has(playerId)) rows.push({ round_id: roundId, player_id: playerId });
+      }
+    } else {
+      for (const playerId of pickedByRound[roundId] || []) {
+        if (activeSet.has(playerId)) rows.push({ round_id: roundId, player_id: playerId });
+      }
     }
   }
   return rows;
+}
+
+// Positive record of players picked for a round, written by setPlayerExcluded
+// when a player is included. Returns [] if the table is not present.
+export async function getAllRoundPlayerPicks() {
+  try {
+    const { data, error } = await supabase
+      .from('round_player_handicaps')
+      .select('round_id, player_id');
+    if (error) return [];
+    return data || [];
+  } catch (e) {
+    return [];
+  }
 }
 
 export async function setPlayerIncluded(roundId, playerId, included) {
   return setPlayerExcluded(roundId, playerId, !included);
 }
 
-// Who played: active players minus round_exclusions. No exclusions row = no one played (new behavior).
+// Who played: active players minus round_exclusions.
+//
+// Participation is stored only as *exclusions*, which leaves "every active
+// player played" indistinguishable from "this round was never set up": both
+// have zero exclusion rows. Marking everyone as playing therefore used to save
+// a round with no participants at all.
+//
+// setPlayerExcluded() writes a round_player_handicaps row whenever a player is
+// included, so those rows are the positive record of who was picked. When a
+// round has no exclusions we fall back to them:
+//   • never edited      -> no exclusions, no handicap rows -> nobody played
+//   • everyone included -> no exclusions, N handicap rows  -> those N played
+// Rounds that do have exclusions keep the original behaviour untouched.
 export async function getRoundParticipants(roundId) {
   const players = await getPlayers();
   const activeIds = players.filter(p => p.is_active).map(p => p.id);
   const exclusions = await getRoundExclusions(roundId).catch(() => []);
-  if (exclusions.length === 0) return [];  // Changed: no exclusions = no one played
+
+  if (exclusions.length === 0) {
+    const snapshots = await getRoundHandicapSnapshots(roundId).catch(() => ({}));
+    const picked = new Set(Object.keys(snapshots).map(Number));
+    if (picked.size === 0) return [];   // round never had players assigned
+    return activeIds.filter(id => picked.has(id));
+  }
+
   const excluded = new Set(exclusions);
   return activeIds.filter(id => !excluded.has(id));
 }
@@ -854,10 +998,7 @@ export async function getLeaderboardData(mode = 'stableford') {
   const includedByRound = buildIncludedByRound(validRounds, exclusionsRes.data || [], activePlayerIds);
 
   // Batch fetch handicap snapshots for all rounds
-  const handicapSnapshotMap = {};
-  for (const r of validRounds) {
-    handicapSnapshotMap[r.id] = await getRoundHandicapSnapshots(r.id);
-  }
+  const handicapSnapshotMap = await getAllRoundHandicapSnapshots();
 
   const playerRoundTotals = {};
   for (const p of activePlayers) {
@@ -1048,10 +1189,7 @@ export async function getTeamLeaderboardData_UNUSED(mode = 'stableford') {
   const includedByRound = buildIncludedByRound(validRounds, exclusionsRes.data || [], activePlayerIds);
 
   // Batch fetch handicap snapshots for all rounds
-  const handicapSnapshotMap = {};
-  for (const r of validRounds) {
-    handicapSnapshotMap[r.id] = await getRoundHandicapSnapshots(r.id);
-  }
+  const handicapSnapshotMap = await getAllRoundHandicapSnapshots();
 
   const playerMap = {};
   for (const p of activePlayers) playerMap[p.id] = p;
@@ -1298,10 +1436,7 @@ export async function getPlayerStats() {
   for (const r of rounds) roundCourseMap[r.id] = r.courses?.name || `Round ${r.round_number}`;
 
   // Batch fetch handicap snapshots for all rounds
-  const handicapSnapshotMap = {};
-  for (const r of rounds) {
-    handicapSnapshotMap[r.id] = await getRoundHandicapSnapshots(r.id);
-  }
+  const handicapSnapshotMap = await getAllRoundHandicapSnapshots();
 
   const stats = [];
   for (const p of players) {
@@ -1426,10 +1561,7 @@ export async function getAwards() {
   const nameById = Object.fromEntries(players.map(p => [p.id, p.name]));
 
   // Batch fetch handicap snapshots for all rounds
-  const handicapSnapshotMap = {};
-  for (const r of rounds) {
-    handicapSnapshotMap[r.id] = await getRoundHandicapSnapshots(r.id);
-  }
+  const handicapSnapshotMap = await getAllRoundHandicapSnapshots();
 
   // Per-player, per-round Stableford totals and splits
   const perPR = {};
@@ -1681,6 +1813,81 @@ export async function getAwards() {
   };
 }
 
+// Distinct players who have logged at least one score.
+//
+// PostgREST caps an unbounded select at 1000 rows and signals it only through
+// the Content-Range header, so `from('scores').select('player_id')` silently
+// returned the first 1000 of 2700+ rows and under-counted the players. Page
+// through explicitly, the same way the leaderboard/stats queries already do.
+/**
+ * Completeness of a round: does every player marked as playing have a score
+ * on every hole? Used to stop a round being closed with gaps in it, which
+ * silently skews stableford totals and the season awards.
+ *
+ * Returns the per-player breakdown so the UI can name who is short.
+ */
+export async function getRoundCompletion(roundId) {
+  const [holes, participantIds, scores, allPlayers] = await Promise.all([
+    getHolesForRound(roundId),
+    getRoundParticipants(roundId),
+    getScoresForRound(roundId),
+    getPlayers(),
+  ]);
+
+  const holeNumbers = (holes || []).map((h) => h.hole_number);
+  const nameById = Object.fromEntries((allPlayers || []).map((p) => [p.id, p.name]));
+
+  const scoredByPlayer = {};
+  for (const s of scores || []) {
+    if (s.strokes == null || s.strokes === '') continue;
+    if (!scoredByPlayer[s.player_id]) scoredByPlayer[s.player_id] = new Set();
+    scoredByPlayer[s.player_id].add(s.hole_number);
+  }
+
+  const players = (participantIds || []).map((pid) => {
+    const scored = scoredByPlayer[pid] || new Set();
+    const missing = holeNumbers.filter((hn) => !scored.has(hn));
+    return {
+      id: pid,
+      name: nameById[pid] || `Player ${pid}`,
+      scored: holeNumbers.length - missing.length,
+      total: holeNumbers.length,
+      missing,
+    };
+  });
+
+  const incomplete = players.filter((p) => p.missing.length > 0);
+
+  return {
+    holeCount: holeNumbers.length,
+    participantCount: players.length,
+    players,
+    incomplete,
+    // No holes set up, or nobody marked as playing, is not "complete" either —
+    // closing such a round would lock in an empty scorecard.
+    complete: holeNumbers.length > 0 && players.length > 0 && incomplete.length === 0,
+  };
+}
+
+export async function getPlayerIdsWithScores() {
+  const ids = new Set();
+  const pageSize = 1000;
+  let from = 0;
+  for (;;) {
+    const { data, error } = await withTimeout(
+      supabase.from('scores').select('player_id').range(from, from + pageSize - 1),
+      15000,
+      'scores-player-ids'
+    );
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    for (const row of data) ids.add(row.player_id);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return ids;
+}
+
 export async function getSeasonOverview() {
   // Parallelize all heavy fetches instead of awaiting sequentially (was ~20 sequential DB calls)
   // TEAM COMMENTED OUT: const [allRounds, allPlayers, stats, lbRes, teamLbRes, scoresRes] = await Promise.all([
@@ -1691,20 +1898,19 @@ export async function getSeasonOverview() {
   // TEAM COMMENTED OUT:   getTeamLeaderboardData(),
   // TEAM COMMENTED OUT:   supabase.from('scores').select('player_id')
   // TEAM COMMENTED OUT: ]);
-  const [allRounds, allPlayers, stats, lbRes, scoresRes] = await Promise.all([
+  const [allRounds, allPlayers, stats, lbRes, playerIdsWithScores] = await Promise.all([
     getAllRounds(),
     getPlayers(),
     getPlayerStats(),
     getLeaderboardData(),
     // TEAM COMMENTED OUT: getTeamLeaderboardData(),
-    supabase.from('scores').select('player_id')
+    getPlayerIdsWithScores(),
   ]);
   const { leaderboard, rounds } = lbRes;
   // TEAM COMMENTED OUT: const { leaderboard: teamLb } = teamLbRes;
-  
+
   // Active players = anyone with at least one score entered (not just completed rounds)
-  const uniquePlayerIdsWithScores = new Set((scoresRes.data || []).map(s => s.player_id));
-  const activePlayers = uniquePlayerIdsWithScores.size;
+  const activePlayers = playerIdsWithScores.size;
   const coursesPlayed = rounds.map(r => r.courses?.name).filter(Boolean);
   const bestRound = stats.reduce((best, s) => s.best_round > best.score ? { player: s.name, score: s.best_round, course: s.best_round_name } : best, { player: '', score: 0, course: '' });
   const eagleLeader = stats.reduce((best, s) => s.eagles > best.count ? { player: s.name, count: s.eagles } : best, { player: '', count: 0 });

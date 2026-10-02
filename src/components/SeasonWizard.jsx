@@ -297,19 +297,57 @@ export default function SeasonWizard({ onComplete }) {
     <>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-3xl mx-auto pb-20 lg:pb-0">
         {/* Progress */}
-        <div className="flex items-center justify-center gap-1 sm:gap-2 mb-6 sm:mb-8 overflow-x-auto px-2">
-          {steps.map((s, i) => (
-            <div key={s} className="flex items-center gap-1 sm:gap-2 shrink-0">
-              <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold transition-all ${i <= step ? 'bg-[#D4AF37] text-[#051A10]' : 'bg-[#051A10] text-[#A9C5B4] border border-[#D4AF37]/20'}`}>
-                {i < step ? <Check size={12} className="sm:w-4 sm:h-4" weight="bold" /> : i + 1}
-              </div>
-              {i < steps.length - 1 && <div className={`w-4 sm:w-8 h-0.5 shrink-0 ${i < step ? 'bg-[#D4AF37]' : 'bg-[#D4AF37]/20'}`} />}
-            </div>
-          ))}
+        <div className="mb-7 text-center">
+          <p className="pg-eyebrow pg-eyebrow-gold mb-2">Season setup</p>
+          <h2 className="pg-display pg-gold-text text-[28px] sm:text-[34px]">{steps[step]}</h2>
+          <p className="mt-1.5 text-xs text-[#A9C5B4]">Step {step + 1} of {steps.length}</p>
         </div>
-        <p className="text-center text-xs text-[#A9C5B4] uppercase tracking-wider mb-6">{steps[step]}</p>
 
-        <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md p-6 shadow-2xl">
+        {/* Step rail */}
+        <div className="pg-scroll mb-7 overflow-x-auto px-1 pb-1">
+          <div className="mx-auto flex w-max items-center gap-1.5 sm:gap-2.5">
+            {steps.map((s, i) => {
+              const done = i < step;
+              const current = i === step;
+              return (
+                <div key={s} className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => { if (i <= step) setStep(i); }}
+                    disabled={i > step}
+                    aria-current={current ? 'step' : undefined}
+                    className={`flex items-center gap-2 rounded-full border px-2.5 py-1.5 transition-all ${
+                      current
+                        ? 'border-[#D4AF37]/55 bg-[#D4AF37]/15 text-[#D4AF37]'
+                        : done
+                        ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-200 hover:border-emerald-500/60'
+                        : 'border-[#D4AF37]/12 text-[#A9C5B4]/55'
+                    } ${i > step ? 'cursor-default' : 'cursor-pointer'}`}
+                  >
+                    <span
+                      className={`pg-num flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${
+                        current
+                          ? 'bg-gradient-to-b from-[#F1D67E] to-[#D4AF37] text-[#051A10]'
+                          : done
+                          ? 'bg-emerald-500/25 text-emerald-200'
+                          : 'bg-white/5 text-[#A9C5B4]/70'
+                      }`}
+                    >
+                      {done ? <Check size={11} weight="bold" /> : i + 1}
+                    </span>
+                    <span className="hidden text-[12px] font-semibold sm:inline">{s}</span>
+                  </button>
+                  {i < steps.length - 1 && (
+                    <span className={`h-px w-4 shrink-0 sm:w-7 ${i < step ? 'bg-emerald-500/45' : 'bg-[#D4AF37]/18'}`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+
+        <div className="pg-card p-5 sm:p-6">
           {msg && <div className={`mb-4 text-xs ${msg.toLowerCase().includes('error') ? 'text-red-400' : 'text-emerald-400'}`}>{msg}</div>}
 
           {/* STEP 0: Welcome */}
@@ -686,8 +724,8 @@ export default function SeasonWizard({ onComplete }) {
         {/* Navigation */}
         {step < 4 && (
           <div className="flex justify-between mt-6">
-            <button onClick={prev} disabled={step === 0} className="flex items-center gap-1 px-4 py-2 text-sm text-[#A9C5B4] hover:text-white disabled:opacity-30"><ArrowLeft size={16} /> Back</button>
-            <button onClick={next} className="flex items-center gap-1 px-4 py-2 text-sm bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/30 rounded-lg hover:bg-[#D4AF37]/30">{step === 3 ? 'Finish' : 'Next'} <ArrowRight size={16} /></button>
+            <button onClick={prev} disabled={step === 0} className="pg-btn pg-btn-ghost"><ArrowLeft size={15} /> Back</button>
+            <button onClick={next} className="pg-btn pg-btn-primary">{step === 3 ? 'Finish' : 'Next'} <ArrowRight size={15} /></button>
           </div>
         )}
       </motion.div>

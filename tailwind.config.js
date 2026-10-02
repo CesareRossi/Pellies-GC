@@ -7,6 +7,13 @@ module.exports = {
   ],
   theme: {
         extend: {
+                // Tailwind's default opacity scale only has 0/5/10/.../95/100,
+                // so a modifier like `bg-[#051A10]/94` silently generates no
+                // class at all. Allowing every integer makes the fine-grained
+                // tints used across the premium layer actually render.
+                opacity: Object.fromEntries(
+                        Array.from({ length: 101 }, (_, i) => [String(i), String(i / 100)])
+                ),
                 fontFamily: {
                         serif: ['Fraunces', 'Georgia', 'serif'],
                         sans: ['DM Sans', 'system-ui', 'sans-serif'],

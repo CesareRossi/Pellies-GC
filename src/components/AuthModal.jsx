@@ -1,9 +1,16 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, X } from '@phosphor-icons/react';
+import React, { useState, useRef } from 'react';
+import { motion } from 'framer-motion';
+import { Lock, X, SignIn, UserPlus } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
+import { Field, Button, IconButton, Banner, Segmented } from './common';
+import { useBodyScrollLock, useEscapeKey, useFocusTrap } from '../hooks/useOverlay';
 
 const AuthModal = ({ onSuccess, onClose }) => {
+  const panelRef = useRef(null);
+  useBodyScrollLock(true);
+  useEscapeKey(true, onClose);
+  useFocusTrap(panelRef, true);
+
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,7 +37,7 @@ const AuthModal = ({ onSuccess, onClose }) => {
           await new Promise(r => setTimeout(r, 500));
           onSuccess();
         } else {
-          setSuccess('Account created! Please check your email to confirm your address, then sign in. An admin will approve your editing access.');
+          setSuccess('Account created. Check your email to confirm your address, then sign in. An admin will approve your editing access.');
           setMode('login');
           setPassword('');
         }
@@ -42,61 +49,110 @@ const AuthModal = ({ onSuccess, onClose }) => {
     }
   };
 
+  const switchMode = (next) => {
+    setMode(next);
+    setError('');
+    setSuccess('');
+  };
+
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-[#051A10]/80 backdrop-blur-sm">
-      <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="w-full max-w-sm mx-4 rounded-xl border border-[#D4AF37]/30 bg-[#0F2C1D] p-6 shadow-2xl">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-sans text-[#D4AF37] flex items-center gap-2">
-            <Lock size={20} /> {mode === 'login' ? 'Sign In' : 'Register'}
-          </h2>
-          <button onClick={onClose} className="text-[#A9C5B4] hover:text-white"><X size={20} /></button>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      className="fixed inset-0 z-[160] flex items-center justify-center bg-[#03110A]/85 p-4 backdrop-blur-lg"
+    >
+      <motion.div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={mode === 'login' ? 'Sign in' : 'Register'}
+        initial={{ scale: 0.95, y: 16, opacity: 0 }}
+        animate={{ scale: 1, y: 0, opacity: 1 }}
+        exit={{ scale: 0.97, opacity: 0 }}
+        transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+        className="pg-card pg-card-feature w-full max-w-sm p-6"
+      >
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl border border-[#D4AF37]/25 bg-[#D4AF37]/10 text-[#D4AF37]">
+              <Lock size={20} weight="duotone" />
+            </span>
+            <p className="pg-eyebrow pg-eyebrow-gold mb-1">Pellies Golf Club</p>
+            <h2 className="pg-display text-[22px] text-white">
+              {mode === 'login' ? 'Welcome back' : 'Create your account'}
+            </h2>
+          </div>
+          <IconButton label="Close" onClick={onClose} data-overlay-close="true"><X size={18} /></IconButton>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-3">
+
+        <Segmented
+          ariaLabel="Sign in or register"
+          className="mb-5 w-full"
+          value={mode}
+          onChange={switchMode}
+          options={[
+            { value: 'login', label: 'Sign in', icon: <SignIn size={14} weight="bold" /> },
+            { value: 'register', label: 'Register', icon: <UserPlus size={14} weight="bold" /> },
+          ]}
+        />
+
+        <form onSubmit={handleSubmit} className="space-y-3.5">
           {mode === 'register' && (
-            <input
-              type="text"
+            <Field
+              label="Display name"
               value={displayName}
-              onChange={e => setDisplayName(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white placeholder-[#A9C5B4]/50 focus:border-[#D4AF37]/50 focus:outline-none text-sm"
-              placeholder="Display Name"
+              onChange={setDisplayName}
+              placeholder="How your name shows in the app"
               required
             />
           )}
-          <input
+          <Field
+            label="Email"
             type="email"
             value={email}
-            onChange={e => setEmail(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white placeholder-[#A9C5B4]/50 focus:border-[#D4AF37]/50 focus:outline-none text-sm"
-            placeholder="Email"
+            onChange={setEmail}
+            placeholder="you@example.com"
             required
+            autoComplete="email"
             data-testid="auth-email"
           />
-          <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white placeholder-[#A9C5B4]/50 focus:border-[#D4AF37]/50 focus:outline-none text-sm"
-            placeholder="Password"
-            required
-            data-testid="auth-password"
-          />
-          {error && <p className="text-red-400 text-xs">{error}</p>}
-          {success && <p className="text-emerald-400 text-xs">{success}</p>}
-          <button
+          <div>
+            <label className="pg-label" htmlFor="pg-auth-password">Password</label>
+            <input
+              id="pg-auth-password"
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="pg-input"
+              placeholder="••••••••"
+              required
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              data-testid="auth-password"
+            />
+          </div>
+
+          {error && <Banner tone="error">{error}</Banner>}
+          {success && <Banner tone="success">{success}</Banner>}
+
+          <Button
             type="submit"
+            variant="primary"
+            size="lg"
+            block
             disabled={loading}
             data-testid="auth-submit"
-            className="w-full py-2.5 rounded-lg bg-[#D4AF37] text-[#051A10] font-bold text-sm hover:bg-[#F1D67E] transition-colors disabled:opacity-50"
+            className="mt-1"
           >
-            {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
-          </button>
+            {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+          </Button>
         </form>
-        <p className="text-xs text-[#A9C5B4] text-center mt-4">
-          {mode === 'login' ? (
-            <>No account? <button onClick={() => { setMode('register'); setError(''); setSuccess(''); }} className="text-[#D4AF37] hover:underline">Register</button></>
-          ) : (
-            <>Have an account? <button onClick={() => { setMode('login'); setError(''); setSuccess(''); }} className="text-[#D4AF37] hover:underline">Sign In</button></>
-          )}
+
+        <p className="mt-4 text-center text-[11px] leading-relaxed text-[#A9C5B4]/70">
+          {mode === 'login'
+            ? 'New accounts need admin approval before you can edit scores.'
+            : 'You can browse straight away — an admin approves editing access.'}
         </p>
       </motion.div>
     </motion.div>

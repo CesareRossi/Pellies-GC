@@ -1,0 +1,857 @@
+/* ==========================================================================
+   Pellies GC — premium design layer
+   --------------------------------------------------------------------------
+   Shared tokens + component classes so every screen reads as one system.
+   The brand palette is unchanged: deep green canvas, gold accent, sage text.
+   What changes is depth, rhythm, typography and micro-interaction.
+   ========================================================================== */
+
+:root {
+  /* The app is dark-only. Declaring it means the browser renders native UI —
+     select popups, autofill, number spinners, default scrollbars — in dark
+     rather than light-on-dark. */
+  color-scheme: dark;
+
+  /* Canvas & surfaces */
+  --pg-canvas: #051a10;
+  --pg-canvas-deep: #03110a;
+  --pg-surface: #0f2c1d;
+  --pg-surface-2: #123523;
+  --pg-surface-hi: #163a27;
+
+  /* Accent */
+  --pg-gold: #d4af37;
+  --pg-gold-light: #f1d67e;
+  --pg-gold-deep: #a8871f;
+
+  /* Text */
+  --pg-text: #ffffff;
+  --pg-muted: #a9c5b4;
+  --pg-muted-dim: #7f9d8c;
+
+  /* Lines */
+  --pg-line: rgba(212, 175, 55, 0.16);
+  --pg-line-strong: rgba(212, 175, 55, 0.32);
+  --pg-line-soft: rgba(212, 175, 55, 0.08);
+
+  /* Elevation — layered, low-opacity. Reads as depth, not drop shadow. */
+  --pg-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --pg-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -8px rgba(0, 0, 0, 0.55);
+  --pg-shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.35), 0 18px 48px -12px rgba(0, 0, 0, 0.7);
+  --pg-shadow-gold: 0 0 0 1px rgba(212, 175, 55, 0.18), 0 12px 32px -12px rgba(212, 175, 55, 0.3);
+
+  /* Radii */
+  --pg-r-sm: 8px;
+  --pg-r: 12px;
+  --pg-r-lg: 16px;
+  --pg-r-xl: 20px;
+
+  --pg-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* --------------------------------------------------------------------------
+   Typography helpers
+   -------------------------------------------------------------------------- */
+
+/* Eyebrow — the small all-caps label above a section */
+.pg-eyebrow {
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--pg-muted);
+  font-feature-settings: 'ss01' on;
+}
+
+.pg-eyebrow-gold {
+  color: rgba(212, 175, 55, 0.85);
+}
+
+/* Display — Fraunces, for page titles and hero numerals */
+.pg-display {
+  font-family: 'Fraunces', Georgia, serif;
+  font-variation-settings: 'SOFT' 60, 'WONK' 0;
+  font-feature-settings: 'ss01' on, 'ss02' on;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  line-height: 1.05;
+}
+
+/* Numerals that must line up in a column */
+.pg-num {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' on, 'lnum' on;
+}
+
+/* A gold wash for headline text */
+.pg-gold-text {
+  background: linear-gradient(135deg, #f4e3a8 0%, var(--pg-gold) 48%, #b9942a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--pg-gold); /* fallback */
+}
+
+/* --------------------------------------------------------------------------
+   Surfaces
+   -------------------------------------------------------------------------- */
+
+/* NOTE on the cascade: premium.css is loaded after Tailwind's utilities, so a
+   plain `.pg-card { position: relative }` would beat a `fixed` utility on the
+   same element — which silently pushed the Quick Score / Quick Fines drawers
+   off-screen. Properties a component may legitimately override are therefore
+   declared through `:where()`, which carries zero specificity, so any utility
+   class wins. */
+:where(.pg-card) {
+  position: relative;
+}
+
+.pg-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0) 42%),
+    rgba(15, 44, 29, 0.92);
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-lg);
+  box-shadow: var(--pg-shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* The hairline of light along the top edge that makes a panel feel lifted */
+.pg-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(212, 175, 55, 0.35) 22%,
+    rgba(212, 175, 55, 0.5) 50%,
+    rgba(212, 175, 55, 0.35) 78%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+.pg-card-flat {
+  background: rgba(5, 26, 16, 0.55);
+  border: 1px solid var(--pg-line-soft);
+  border-radius: var(--pg-r);
+}
+
+/* Interactive card — lifts on hover */
+.pg-card-interactive {
+  transition: transform 0.22s var(--pg-ease), border-color 0.22s var(--pg-ease),
+    box-shadow 0.22s var(--pg-ease), background-color 0.22s var(--pg-ease);
+}
+
+.pg-card-interactive:hover {
+  transform: translateY(-2px);
+  border-color: var(--pg-line-strong);
+  box-shadow: var(--pg-shadow-lg);
+}
+
+.pg-card-interactive:active {
+  transform: translateY(0);
+}
+
+/* Gold-tinted feature panel */
+.pg-card-feature {
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(212, 175, 55, 0.14) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 40%),
+    rgba(15, 44, 29, 0.92);
+}
+
+/* --------------------------------------------------------------------------
+   Buttons
+   -------------------------------------------------------------------------- */
+
+.pg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: var(--pg-r-sm);
+  border: 1px solid transparent;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 10px 14px;
+  min-height: 38px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.18s var(--pg-ease), border-color 0.18s var(--pg-ease),
+    color 0.18s var(--pg-ease), transform 0.12s var(--pg-ease), box-shadow 0.18s var(--pg-ease);
+}
+
+.pg-btn:active:not(:disabled) {
+  transform: scale(0.975);
+}
+
+.pg-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Primary — the one gold action per view */
+.pg-btn-primary {
+  background: linear-gradient(180deg, var(--pg-gold-light) 0%, var(--pg-gold) 58%, #c29b2b 100%);
+  color: #051a10;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.28) inset, var(--pg-shadow-sm);
+}
+
+.pg-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f8e6b4 0%, var(--pg-gold-light) 60%, var(--pg-gold) 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.35) inset, var(--pg-shadow-gold);
+}
+
+/* Secondary — gold outline on a translucent wash */
+.pg-btn-secondary {
+  background: rgba(212, 175, 55, 0.12);
+  border-color: rgba(212, 175, 55, 0.3);
+  color: var(--pg-gold);
+}
+
+.pg-btn-secondary:hover:not(:disabled) {
+  background: rgba(212, 175, 55, 0.2);
+  border-color: rgba(212, 175, 55, 0.48);
+  color: var(--pg-gold-light);
+}
+
+/* Ghost — quiet, for tertiary actions */
+.pg-btn-ghost {
+  background: transparent;
+  color: var(--pg-muted);
+  border-color: transparent;
+}
+
+.pg-btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--pg-text);
+  border-color: var(--pg-line-soft);
+}
+
+/* Outline — neutral bordered */
+.pg-btn-outline {
+  background: rgba(5, 26, 16, 0.5);
+  border-color: var(--pg-line);
+  color: var(--pg-muted);
+}
+
+.pg-btn-outline:hover:not(:disabled) {
+  border-color: var(--pg-line-strong);
+  color: var(--pg-text);
+  background: rgba(22, 58, 39, 0.6);
+}
+
+.pg-btn-danger {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+}
+
+.pg-btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.9);
+  border-color: rgba(239, 68, 68, 0.9);
+  color: #fff;
+}
+
+.pg-btn-sm {
+  min-height: 32px;
+  padding: 7px 11px;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.pg-btn-lg {
+  min-height: 46px;
+  padding: 13px 20px;
+  font-size: 14px;
+}
+
+.pg-btn-block {
+  width: 100%;
+}
+
+/* Icon-only action — used in dense admin rows. 36px keeps it tappable. */
+/* Size via :where() so `h-8 w-8` style utilities can shrink a dense row's
+   buttons without fighting specificity. */
+:where(.pg-icon-btn) {
+  width: 36px;
+  height: 36px;
+}
+
+.pg-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--pg-r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--pg-muted);
+  cursor: pointer;
+  transition: background-color 0.16s var(--pg-ease), color 0.16s var(--pg-ease),
+    border-color 0.16s var(--pg-ease), transform 0.12s var(--pg-ease);
+}
+
+.pg-icon-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--pg-line-soft);
+  color: var(--pg-text);
+}
+
+.pg-icon-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.pg-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pg-icon-btn-gold:hover:not(:disabled) {
+  color: var(--pg-gold);
+  background: rgba(212, 175, 55, 0.14);
+  border-color: rgba(212, 175, 55, 0.25);
+}
+
+.pg-icon-btn-danger:hover:not(:disabled) {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.28);
+}
+
+.pg-icon-btn-active {
+  color: var(--pg-gold);
+  background: rgba(212, 175, 55, 0.16);
+  border-color: rgba(212, 175, 55, 0.3);
+}
+
+/* --------------------------------------------------------------------------
+   Form controls
+   -------------------------------------------------------------------------- */
+
+.pg-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pg-muted);
+  margin-bottom: 7px;
+}
+
+.pg-input,
+.pg-select {
+  width: 100%;
+  /* background-COLOR, not the `background` shorthand: the shorthand resets
+     background-image, which would wipe the select's chevron. */
+  background-color: rgba(3, 17, 10, 0.85);
+  border: 1px solid var(--pg-line);
+  border-radius: var(--pg-r-sm);
+  color: var(--pg-text);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.3;
+  /* Keep this at normal specificity: Tailwind Preflight zeroes padding on
+     input/select, so a :where() rule here would lose and every field would
+     render flush against its border. Variants below override it explicitly. */
+  padding: 11px 13px;
+  min-height: 42px;
+  transition: border-color 0.18s var(--pg-ease), box-shadow 0.18s var(--pg-ease),
+    background-color 0.18s var(--pg-ease);
+}
+
+.pg-input::placeholder {
+  color: rgba(169, 197, 180, 0.45);
+}
+
+.pg-input:hover:not(:disabled),
+.pg-select:hover:not(:disabled) {
+  border-color: var(--pg-line-strong);
+}
+
+.pg-input:focus,
+.pg-select:focus {
+  outline: none;
+  border-color: rgba(212, 175, 55, 0.6);
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.14);
+  background-color: rgba(3, 17, 10, 1);
+}
+
+.pg-input:disabled,
+.pg-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pg-input-invalid,
+.pg-input-invalid:focus {
+  border-color: rgba(248, 113, 113, 0.65);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.12);
+}
+
+/* Native select: strip the OS chevron, draw our own so it matches the theme.
+   The inline SVG is a gold caret; padding-right leaves room for it. */
+.pg-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  /* The option list is drawn by the OS, not by us. `color-scheme: dark` gets
+     a proper native dark popup on macOS and Windows; hand-painting <option>
+     backgrounds fights the platform chrome and renders inconsistently. */
+  color-scheme: dark;
+  padding-right: 38px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23d4af37' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 13px center;
+  background-size: 13px;
+  cursor: pointer;
+}
+
+/* The custom listbox trigger is a <button>, so it needs the flex/alignment
+   bits a native select got for free. The chevron, padding, border and focus
+   treatment all come from .pg-select above, so the two look identical. */
+.pg-select-trigger {
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+.pg-select-trigger > span {
+  width: 100%;
+}
+
+/* Open state reads like focus so the trigger stays visibly "active" while the
+   list is up, even though focus has moved into the popup. */
+.pg-select-open {
+  border-color: rgba(212, 175, 55, 0.6);
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.14);
+}
+
+/* Deliberately no <option> colours. The popup is OS-drawn: with
+   `color-scheme: dark` the browser paints it dark and picks a matching text
+   colour itself. Forcing `color: #fff` here would make options invisible on
+   any engine that still draws a light popup. */
+
+/* Search variant leaves room for the leading icon and the clear button.
+   Declared here (not as Tailwind pl-10/pr-9 utilities) because .pg-input's
+   padding shorthand loads after the utility layer and would win. */
+.pg-input-search {
+  padding-left: 38px;
+  padding-right: 34px;
+}
+
+.pg-field-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(169, 197, 180, 0.72);
+  margin-top: 6px;
+}
+
+.pg-field-error {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #fca5a5;
+  margin-top: 6px;
+}
+
+/* --------------------------------------------------------------------------
+   Chips / badges
+   -------------------------------------------------------------------------- */
+
+.pg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--pg-line);
+  background: rgba(5, 26, 16, 0.6);
+  color: var(--pg-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.pg-chip-gold {
+  border-color: rgba(212, 175, 55, 0.35);
+  background: rgba(212, 175, 55, 0.14);
+  color: var(--pg-gold-light);
+}
+
+.pg-chip-emerald {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.13);
+  color: #6ee7b7;
+}
+
+.pg-chip-rose {
+  border-color: rgba(244, 63, 94, 0.35);
+  background: rgba(244, 63, 94, 0.13);
+  color: #fda4af;
+}
+
+.pg-chip-purple {
+  border-color: rgba(168, 85, 247, 0.35);
+  background: rgba(168, 85, 247, 0.13);
+  color: #d8b4fe;
+}
+
+.pg-chip-amber {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.13);
+  color: #fcd34d;
+}
+
+.pg-chip-red {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.13);
+  color: #fca5a5;
+}
+
+/* "LIVE" — the one place a pulse is justified */
+.pg-chip-live {
+  border-color: rgba(212, 175, 55, 0.6);
+  background: linear-gradient(180deg, var(--pg-gold-light), var(--pg-gold));
+  color: #051a10;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.pg-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #051a10;
+  animation: pg-pulse-dot 1.8s ease-in-out infinite;
+}
+
+@keyframes pg-pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Segmented control (admin tabs, mode toggle)
+   -------------------------------------------------------------------------- */
+
+.pg-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--pg-r);
+  border: 1px solid var(--pg-line);
+  background: rgba(3, 17, 10, 0.72);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.pg-segment-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--pg-muted);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.18s var(--pg-ease);
+  z-index: 1;
+}
+
+.pg-segment-item:hover {
+  color: var(--pg-text);
+}
+
+/* The active pill is a plain background on the button itself, not a separate
+   animated element. It used to be a framer-motion `layoutId` pill, which had
+   two failure modes: two instances of the same control (the scoring toggle is
+   rendered in both the desktop and the mobile nav) fought over one shared
+   layoutId, and a stalled layout animation left the active label in dark text
+   with no pill behind it — unreadable. A cross-fade is less showy and always
+   correct. */
+.pg-segment-item {
+  transition: color 0.18s var(--pg-ease), background-color 0.18s var(--pg-ease),
+    box-shadow 0.18s var(--pg-ease);
+}
+
+.pg-segment-item[data-active='true'] {
+  color: #051a10;
+  background: linear-gradient(180deg, var(--pg-gold-light) 0%, var(--pg-gold) 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.3) inset, 0 2px 8px -2px rgba(212, 175, 55, 0.5);
+}
+
+.pg-segment-item[data-active='true']:hover {
+  color: #051a10;
+}
+
+/* Danger tab (Admin) keeps the same shape in red */
+.pg-segment-item-danger[data-active='true'] {
+  color: #fff;
+  background: linear-gradient(180deg, #f87171 0%, #dc2626 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset, 0 2px 8px -2px rgba(220, 38, 38, 0.5);
+}
+
+/* --------------------------------------------------------------------------
+   Menus (NavDropdown renders through a portal into .pg-menu)
+   -------------------------------------------------------------------------- */
+
+.pg-menu {
+  border-radius: var(--pg-r);
+  border: 1px solid var(--pg-line-strong);
+  background: linear-gradient(180deg, rgba(20, 52, 34, 0.98) 0%, rgba(12, 36, 23, 0.98) 100%);
+  box-shadow: var(--pg-shadow-lg);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  overflow: hidden;
+}
+
+.pg-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--pg-muted);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: background-color 0.13s var(--pg-ease), color 0.13s var(--pg-ease);
+}
+
+.pg-menu-item:hover,
+.pg-menu-item[data-highlighted='true'] {
+  background: rgba(212, 175, 55, 0.12);
+  color: var(--pg-text);
+}
+
+.pg-menu-item[data-active='true'] {
+  color: var(--pg-gold);
+  background: rgba(212, 175, 55, 0.09);
+  font-weight: 600;
+}
+
+.pg-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--pg-line-soft);
+}
+
+/* --------------------------------------------------------------------------
+   Scrollbars — thin and gold-tinted inside panels, so long lists read calm
+   -------------------------------------------------------------------------- */
+
+.pg-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 175, 55, 0.4) transparent;
+}
+
+.pg-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.pg-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pg-scroll::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.3);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.pg-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 175, 55, 0.55);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* A fading edge that tells the eye "there is more below" */
+.pg-fade-bottom {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent 100%);
+}
+
+/* --------------------------------------------------------------------------
+   Skeletons & empty states
+   -------------------------------------------------------------------------- */
+
+.pg-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.045);
+  border-radius: var(--pg-r-sm);
+}
+
+.pg-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(212, 175, 55, 0.09) 50%,
+    transparent 100%
+  );
+  animation: pg-shimmer 1.6s infinite;
+}
+
+@keyframes pg-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-skeleton::after,
+  .pg-live-dot {
+    animation: none;
+  }
+  .pg-card-interactive:hover {
+    transform: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Focus ring — one consistent treatment everywhere
+   -------------------------------------------------------------------------- */
+
+.pg-btn:focus-visible,
+.pg-icon-btn:focus-visible,
+.pg-segment-item:focus-visible,
+.pg-menu-item:focus-visible,
+.pg-input:focus-visible,
+.pg-select:focus-visible {
+  outline: 2px solid var(--pg-gold);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Data table
+   -------------------------------------------------------------------------- */
+
+.pg-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.pg-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: linear-gradient(180deg, #0a2416 0%, #082012 100%);
+  border-bottom: 1px solid var(--pg-line-strong);
+  padding: 10px 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pg-muted);
+  white-space: nowrap;
+}
+
+.pg-table tbody td {
+  padding: 11px 12px;
+  font-size: 13.5px;
+  color: var(--pg-text);
+  border-bottom: 1px solid rgba(212, 175, 55, 0.07);
+}
+
+.pg-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.pg-table tbody tr:nth-child(even) td {
+  background-color: rgba(255, 255, 255, 0.022);
+}
+
+.pg-table tbody tr:hover td {
+  background-color: rgba(212, 175, 55, 0.07);
+}
+
+/* Frozen left columns (rank + player) and the frozen right total column.
+   Each needs its own opaque background or rows bleed through while scrolling. */
+.pg-col-sticky {
+  position: sticky;
+  z-index: 10;
+  background-color: #0c2718;
+}
+
+.pg-table tbody tr:nth-child(even) .pg-col-sticky {
+  background-color: #0e2b1b;
+}
+
+.pg-table tbody tr:hover .pg-col-sticky {
+  background-color: #17301f;
+}
+
+.pg-table thead .pg-col-sticky {
+  z-index: 30;
+  background: linear-gradient(180deg, #0a2416 0%, #082012 100%);
+}
+
+/* The edge shadow that separates a frozen column from the scrolling body */
+.pg-col-sticky-left-edge::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: -1px;
+  width: 12px;
+  transform: translateX(100%);
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.35), transparent);
+  pointer-events: none;
+}
+
+.pg-col-sticky-right-edge::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: -1px;
+  width: 12px;
+  transform: translateX(-100%);
+  background: linear-gradient(270deg, rgba(0, 0, 0, 0.35), transparent);
+  pointer-events: none;
+}
+
+/* Cell that counted toward a player's total */
+.pg-cell-counted {
+  background-image: linear-gradient(
+    180deg,
+    rgba(212, 175, 55, 0.16),
+    rgba(212, 175, 55, 0.08)
+  );
+  box-shadow: inset 0 0 0 1px rgba(212, 175, 55, 0.18);
+}

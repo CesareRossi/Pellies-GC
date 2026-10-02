@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Scroll, BeerBottle, Trophy, Flag } from '@phosphor-icons/react';
+import { PageHeader, Card, SectionLabel, Chip } from './common';
 
 const fineRules = [
   { id: 'ThreePutt', label: '3 Putt', penalty: '1 Shot', description: 'Taking 3 or more putts on a single green' },
@@ -35,88 +36,93 @@ const RulesInfo = () => {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="max-w-4xl mx-auto pb-12"
+      className="mx-auto max-w-4xl pb-12"
     >
-      {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-2xl sm:text-3xl font-sans font-bold text-[#D4AF37] tracking-tight flex items-center gap-3">
-          <Scroll size={32} weight="duotone" />
-          Rules & Info
-        </h2>
-        <p className="text-sm text-[#A9C5B4] mt-1">
-          Everything you need to know about fines, awards, and tour rules
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="House rules"
+        title="Rules & Info"
+        icon={<Scroll size={27} weight="duotone" />}
+        lede="Fines, awards and the special holes — everything the tour runs on."
+      />
 
-      {/* Special Holes Section */}
-      <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md p-4 mb-6">
-        <h3 className="text-lg font-bold text-[#D4AF37] mb-4 flex items-center gap-2">
-          <Flag size={24} weight="duotone" />
-          Special Holes
-        </h3>
-        <div className="space-y-3">
+      {/* Special holes */}
+      <Card className="mb-5 p-5">
+        <SectionLabel icon={<Flag size={14} weight="duotone" />} className="mb-4">Special holes</SectionLabel>
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           {specialHoles.map((hole, idx) => (
-            <div key={idx} className="flex items-start gap-3 p-3 rounded-lg bg-[#051A10]/50 border border-[#D4AF37]/10">
-              <div className="flex-shrink-0">
-                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                  hole.color === 'amber' 
-                    ? 'border-amber-500 text-amber-400' 
-                    : 'border-purple-500 text-purple-400'
-                }`}>
-                  <span className="text-xs font-bold">{hole.color === 'amber' ? 'B' : 'J'}</span>
-                </div>
-              </div>
-              <div>
+            <div
+              key={idx}
+              className={`flex items-start gap-3 rounded-xl border p-3.5 ${
+                hole.color === 'amber'
+                  ? 'border-rose-500/25 bg-rose-500/8'
+                  : 'border-purple-500/25 bg-purple-500/8'
+              }`}
+            >
+              <span className="shrink-0 text-xl leading-none">{hole.color === 'amber' ? '🍺' : '🎭'}</span>
+              <div className="min-w-0">
                 <p className="text-sm font-semibold text-white">{hole.title}</p>
-                <p className="text-xs text-[#A9C5B4]">{hole.description}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-[#A9C5B4]">{hole.description}</p>
               </div>
             </div>
           ))}
         </div>
-      </div>
+      </Card>
 
-      {/* Fines Section */}
-      <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md p-4 mb-6">
-        <h3 className="text-lg font-bold text-[#D4AF37] mb-4 flex items-center gap-2">
-          <BeerBottle size={24} weight="duotone" />
-          Fines Rules
-        </h3>
-        <div className="space-y-3">
+      {/* Fines */}
+      <Card className="mb-5 p-5">
+        <SectionLabel
+          icon={<BeerBottle size={14} weight="duotone" />}
+          className="mb-4"
+          trailing={<Chip>{fineRules.length} rules</Chip>}
+        >
+          Fines
+        </SectionLabel>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
           {fineRules.map((fine) => (
-            <div key={fine.id} className="flex items-start gap-3 p-3 rounded-lg bg-[#051A10]/50 border border-[#D4AF37]/10">
-              <div className="flex-shrink-0 w-16 text-center">
-                <span className="text-xs font-bold text-red-400 uppercase">{fine.penalty}</span>
-              </div>
-              <div className="flex-1">
+            <div
+              key={fine.id}
+              className="flex items-start gap-3 rounded-xl border border-[#D4AF37]/10 bg-[#03110A]/50 p-3.5 transition-colors hover:border-[#D4AF37]/25"
+            >
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-white">{fine.label}</p>
-                <p className="text-xs text-[#A9C5B4]">{fine.description}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-[#A9C5B4]">{fine.description}</p>
               </div>
+              <span
+                className={`pg-chip shrink-0 ${
+                  fine.penalty === 'Beer Down' ? 'pg-chip-rose' : 'pg-chip-amber'
+                }`}
+              >
+                {fine.penalty}
+              </span>
             </div>
           ))}
         </div>
-      </div>
+      </Card>
 
-      {/* Awards Section */}
-      <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md p-4 mb-6">
-        <h3 className="text-lg font-bold text-[#D4AF37] mb-4 flex items-center gap-2">
-          <Trophy size={24} weight="duotone" />
-          Awards Descriptions
-        </h3>
-        <div className="space-y-2">
+      {/* Awards */}
+      <Card className="p-5">
+        <SectionLabel
+          icon={<Trophy size={14} weight="duotone" />}
+          className="mb-4"
+          trailing={<Chip>{awardRules.length} awards</Chip>}
+        >
+          Awards
+        </SectionLabel>
+        <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2">
           {awardRules.map((award, idx) => (
-            <div key={idx} className="flex items-start gap-3 p-2 rounded-lg hover:bg-[#051A10]/30 transition-colors">
-              <div className="flex-shrink-0 mt-0.5">
-                <div className="w-2 h-2 rounded-full bg-[#D4AF37]" />
-              </div>
-              <div>
+            <div
+              key={idx}
+              className="flex items-start gap-2.5 rounded-lg p-2.5 transition-colors hover:bg-[#03110A]/45"
+            >
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#D4AF37]" />
+              <div className="min-w-0">
                 <p className="text-sm font-semibold text-white">{award.title}</p>
-                <p className="text-xs text-[#A9C5B4]">{award.description}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-[#A9C5B4]">{award.description}</p>
               </div>
             </div>
           ))}
         </div>
-      </div>
-
+      </Card>
     </motion.div>
   );
 };

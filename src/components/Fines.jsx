@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { BeerBottle, Club, Flag, Golf, MinusCircle, PlusCircle, Skull, Trash, Wine, XCircle, Lock } from '@phosphor-icons/react';
+import { BeerBottle, Club, Flag, Golf, MinusCircle, Skull, Trash, Wine, XCircle, Lock, Plus } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
+import { PageHeader, Card, SelectField, Banner, Chip, Spinner, SectionLabel } from './common';
 
 const FINE_TYPES = [
   { id: 'ThreePutt', label: '3 Putt', icon: <MinusCircle size={20} />, penalty: '1 Shot' },
@@ -177,130 +178,116 @@ const Fines = ({ rounds, players, userId, userPlayerId = null, currentRoundId = 
       animate={{ opacity: 1 }}
       className="max-w-4xl mx-auto"
     >
-      {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-2xl sm:text-3xl font-sans font-bold text-[#D4AF37] tracking-tight">
-          Fines
-        </h2>
-        <p className="text-sm text-[#A9C5B4] mt-1">
-          Track fines for the tour - honesty is key!
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Tour discipline"
+        title="Fines"
+        icon={<BeerBottle size={26} weight="duotone" />}
+        lede="Track fines for the tour — honesty is key."
+      />
 
       {/* Selectors */}
-      <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md p-4 mb-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Round</label>
-            <select
-              value={selectedRound}
-              onChange={(e) => setSelectedRound(e.target.value)}
-              className="w-full px-4 py-3 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white focus:outline-none text-sm"
-            >
-              <option value="">Select round...</option>
-              {rounds.map(r => (
-                <option key={r.id} value={r.id}>
-                  {r.courses?.name} (Round {r.round_number}){r.is_closed ? ' 🔒' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-[#A9C5B4] uppercase tracking-wider block mb-2">Player</label>
-            <select
-              value={selectedPlayer}
-              onChange={(e) => setSelectedPlayer(e.target.value)}
-              className="w-full px-4 py-3 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 text-white focus:outline-none text-sm"
-            >
-              <option value="">Select player...</option>
-              {players.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
+      <Card className="mb-5 p-4 sm:p-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <SelectField
+            label="Round"
+            value={selectedRound}
+            onChange={setSelectedRound}
+            placeholder="Select round…"
+            options={rounds.map(r => ({
+              value: r.id,
+              label: `R${r.round_number} \u00b7 ${r.courses?.name || 'No course'}${r.is_closed ? '  (closed)' : ''}`,
+            }))}
+            data-testid="fines-round-select"
+          />
+          <SelectField
+            label="Player"
+            value={selectedPlayer}
+            onChange={setSelectedPlayer}
+            placeholder="Select player…"
+            options={players.map(p => ({ value: p.id, label: p.name }))}
+            data-testid="fines-player-select"
+          />
         </div>
 
-        {error && (
-          <div className="mt-4 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
-            <p className="text-red-400 text-sm">{error}</p>
-          </div>
-        )}
+        {error && <Banner tone="error" className="mt-4">{error}</Banner>}
 
-        {/* Closed Round Warning */}
         {isRoundClosed && (
-          <div className="mt-4 p-3 bg-amber-900/20 border border-amber-500/30 rounded-lg flex items-center gap-3">
-            <Lock size={18} className="text-amber-400 flex-shrink-0" />
-            <p className="text-amber-400 text-sm">This round is closed. Fines can no longer be added.</p>
-          </div>
+          <Banner tone="warning" className="mt-4">
+            <span className="flex items-center gap-2">
+              <Lock size={14} weight="fill" className="shrink-0" />
+              This round is closed. Fines can no longer be added.
+            </span>
+          </Banner>
         )}
-      </div>
+      </Card>
 
       {/* Fine Buttons - Hidden if round is closed */}
       {selectedRound && selectedPlayer && !isRoundClosed && (
-        <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md p-4 mb-6">
-          <h3 className="text-sm font-semibold text-[#D4AF37] uppercase tracking-wider mb-4">
-            Add Fine
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+        <Card className="mb-5 p-4 sm:p-5">
+          <SectionLabel icon={<Plus size={13} weight="bold" />} className="mb-4">Add fine</SectionLabel>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4">
             {FINE_TYPES.map(type => (
               <button
                 key={type.id}
+                type="button"
                 onClick={() => addFine(type.id)}
-                className="flex flex-col items-center gap-2 p-3 rounded-lg bg-[#051A10] border border-[#D4AF37]/20 hover:border-[#D4AF37]/50 hover:bg-[#051A10]/80 transition-all active:scale-[0.98]"
+                className="group flex flex-col items-center gap-1.5 rounded-xl border border-[#D4AF37]/14 bg-[#03110A]/60 p-3.5 transition-all active:scale-[0.97] hover:-translate-y-0.5 hover:border-[#D4AF37]/42 hover:bg-[#D4AF37]/8"
+                data-testid={`fine-add-${type.id}`}
               >
-                <span className="text-[#D4AF37]">{type.icon}</span>
-                <span className="text-xs text-white font-medium text-center">{type.label}</span>
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#D4AF37]/10 text-[#D4AF37] transition-transform group-hover:scale-105">
+                  {type.icon}
+                </span>
+                <span className="text-center text-[12px] font-semibold leading-tight text-white">{type.label}</span>
                 <span className="text-[10px] text-[#A9C5B4]">{type.penalty}</span>
               </button>
             ))}
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Summary - Shows first */}
       {selectedRound && summaryEntries.length > 0 && (
-        <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md overflow-hidden mb-6">
-          <div className="bg-[#051A10] border-b border-[#D4AF37]/30 px-4 py-3">
-            <h3 className="text-sm font-semibold text-[#D4AF37] uppercase tracking-wider">
-              Daily Summary
-            </h3>
+        <Card className="mb-5 overflow-hidden">
+          <div className="border-b border-[#D4AF37]/16 bg-[#03110A]/55 px-4 py-3">
+            <SectionLabel>Round summary</SectionLabel>
           </div>
-          <div className="divide-y divide-[#D4AF37]/10">
-            {summaryEntries.map(([playerName, data]) => (
-              <div key={playerName} className="flex items-center justify-between px-4 py-3">
-                <span className="text-white font-medium">{playerName}</span>
-                <div className="flex items-center gap-4 text-sm">
-                  {data.shots > 0 && (
-                    <span className="text-amber-400">{data.shots} shot{data.shots !== 1 ? 's' : ''}</span>
-                  )}
-                  {data.beers > 0 && (
-                    <span className="text-orange-400">{data.beers} beer{data.beers !== 1 ? 's' : ''}</span>
-                  )}
-                  <span className="text-[#A9C5B4]">{data.total} total</span>
+          <div className="divide-y divide-[#D4AF37]/8">
+            {summaryEntries.map(([playerName, data], i) => (
+              <div key={playerName} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="pg-num flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/5 text-[11px] font-bold text-[#A9C5B4]">
+                    {i + 1}
+                  </span>
+                  <span className="truncate text-sm font-medium text-white">{playerName}</span>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {data.shots > 0 && <Chip tone="amber">{data.shots} shot{data.shots !== 1 ? 's' : ''}</Chip>}
+                  {data.beers > 0 && <Chip tone="rose">{data.beers} beer{data.beers !== 1 ? 's' : ''}</Chip>}
+                  <Chip>{data.total} total</Chip>
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Current Fines List */}
       {selectedRound && (
-        <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md overflow-hidden">
-          <div className="bg-[#051A10] border-b border-[#D4AF37]/30 px-4 py-3">
-            <h3 className="text-sm font-semibold text-[#A9C5B4] uppercase tracking-wider">
-              Current Fines ({fines.length})
-            </h3>
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-[#D4AF37]/16 bg-[#03110A]/55 px-4 py-3">
+            <SectionLabel className="flex-1">Current fines</SectionLabel>
+            <Chip tone={fines.length ? 'rose' : 'default'}>{fines.length}</Chip>
           </div>
 
           {loading ? (
-            <div className="p-8 text-center">
-              <div className="w-8 h-8 border-2 border-[#D4AF37]/30 border-t-[#D4AF37] rounded-full animate-spin mx-auto mb-4" />
-              <p className="text-[#A9C5B4] text-sm">Loading...</p>
+            <div className="p-10 text-center">
+              <Spinner size={30} className="mx-auto mb-3" />
+              <p className="text-sm text-[#A9C5B4]">Loading…</p>
             </div>
           ) : fines.length === 0 ? (
-            <div className="p-8 text-center">
-              <p className="text-[#A9C5B4]">No fines yet. Be good... or be good at it!</p>
+            <div className="p-10 text-center">
+              <BeerBottle size={26} weight="duotone" className="mx-auto mb-2.5 text-[#D4AF37]/40" />
+              <p className="text-sm text-[#A9C5B4]">No fines yet. Be good… or be good at it.</p>
             </div>
           ) : (
             <div ref={finesListRef} className="divide-y divide-[#D4AF37]/10 max-h-[min(60vh,28rem)] overflow-y-auto">
@@ -310,24 +297,25 @@ const Fines = ({ rounds, players, userId, userPlayerId = null, currentRoundId = 
                 return (
                   <div
                     key={fine.id}
-                    className={`flex items-center justify-between px-4 py-3 transition-opacity ${fine.settled ? 'opacity-50' : ''} ${isSettling ? 'opacity-70' : ''}`}
+                    className={`flex items-center justify-between gap-3 px-4 py-2.5 transition-opacity ${fine.settled ? 'opacity-55' : ''} ${isSettling ? 'opacity-70' : ''}`}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className="text-[#D4AF37]">{type?.icon || <Skull size={20} />}</span>
-                      <div>
-                        <p className="text-white font-medium text-sm">{fine.players?.name}</p>
-                        <p className="text-[#A9C5B4] text-xs">{type?.label} • {type?.penalty}</p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D4AF37]/10 text-[#D4AF37]">
+                        {type?.icon || <Skull size={18} />}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-semibold text-white">{fine.players?.name}</p>
+                        <p className="truncate text-[11px] text-[#A9C5B4]">{type?.label} · {type?.penalty}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => settleFine(fine.id, !fine.settled)}
                         disabled={isSettling}
-                        className={`min-w-[4.5rem] px-2 py-1 rounded text-xs font-medium transition-colors disabled:cursor-wait ${
-                          fine.settled
-                            ? 'bg-emerald-500/20 text-emerald-400'
-                            : 'bg-amber-500/20 text-amber-400'
+                        aria-pressed={fine.settled}
+                        className={`pg-chip min-w-[70px] justify-center transition-colors disabled:cursor-wait ${
+                          fine.settled ? 'pg-chip-emerald' : 'pg-chip-amber'
                         }`}
                       >
                         {isSettling ? '…' : fine.settled ? 'Settled' : 'Pending'}
@@ -336,9 +324,10 @@ const Fines = ({ rounds, players, userId, userPlayerId = null, currentRoundId = 
                         type="button"
                         onClick={() => removeFine(fine.id)}
                         disabled={isSettling}
-                        className="p-1 text-[#A9C5B4] hover:text-red-400 transition-colors disabled:opacity-40"
+                        aria-label="Remove fine"
+                        className="pg-icon-btn pg-icon-btn-danger h-8 w-8"
                       >
-                        <Trash size={16} />
+                        <Trash size={14} />
                       </button>
                     </div>
                   </div>
@@ -346,7 +335,7 @@ const Fines = ({ rounds, players, userId, userPlayerId = null, currentRoundId = 
               })}
             </div>
           )}
-        </div>
+        </Card>
       )}
     </motion.div>
   );

@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
+@import './styles/premium.css';
 
 * {
   margin: 0;
@@ -35,8 +36,10 @@ table, .tabular-nums {
   font-feature-settings: 'tnum' on;
 }
 
-/* Subtle letter-spacing on all-caps utility headings */
-.uppercase {
+/* Subtle letter-spacing on all-caps utility headings.
+   Scoped to headings/labels so chips and badges keep their own tracking. */
+h1.uppercase, h2.uppercase, h3.uppercase, h4.uppercase, h5.uppercase,
+p.uppercase, label.uppercase {
   letter-spacing: 0.08em;
 }
 
@@ -47,21 +50,34 @@ html {
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0F2C1D;
+  background: #051A10;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #D4AF37;
-  border-radius: 4px;
+  background: rgba(212, 175, 55, 0.35);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #F1D67E;
+  background: rgba(212, 175, 55, 0.6);
+  background-clip: padding-box;
+}
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 175, 55, 0.35) #051A10;
+}
+
+/* Keep the page behind a modal from scrolling (see useBodyScrollLock) */
+body.pg-scroll-locked {
+  overflow: hidden;
 }
 
 /* Selection */

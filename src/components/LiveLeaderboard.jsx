@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Trophy, Target, TrendUp, Users, Flag, CaretUp, CaretDown, Minus } from '@phosphor-icons/react';
+import { Target, Flag, Lock } from '@phosphor-icons/react';
 import * as db from '../services/supabaseService';
+import { Card, Button, Chip, LiveChip, LoadingState, EmptyState, Segmented, Banner } from './common';
 
 // PGA-Style Live Leaderboard Component
 // Designed for tracking leaderboard during active rounds
@@ -13,6 +14,7 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion
   const [currentRoundInfo, setCurrentRoundInfo] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [closingRound, setClosingRound] = useState(false);
+  const [closeError, setCloseError] = useState('');
   const [availableRounds, setAvailableRounds] = useState([]);
   const [selectedRoundId, setSelectedRoundId] = useState(null);
 
@@ -83,14 +85,30 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion
   const closeRound = async () => {
     if (!selectedRoundId) return;
     setClosingRound(true);
+    setCloseError('');
     try {
+      // Same rule as Admin → Rounds: every player marked as playing must have
+      // every hole before the round can be locked. The "thru 18" check above
+      // only sees players who already have scores, so it can't catch someone
+      // who was never entered at all.
+      const check = await db.getRoundCompletion(selectedRoundId);
+      if (!check.complete) {
+        const list = check.incomplete.slice(0, 4).map((p) => `${p.name} (${p.scored}/${p.total})`).join(', ');
+        const more = check.incomplete.length > 4 ? ` +${check.incomplete.length - 4} more` : '';
+        setCloseError(
+          check.participantCount === 0
+            ? 'Nobody is marked as playing this round yet.'
+            : `Can’t close yet — incomplete scorecards: ${list}${more}.`
+        );
+        return;
+      }
       await db.updateRound(selectedRoundId, { is_closed: true });
       setSelectedRoundId(null); // Reset to trigger selection of next available round
       if (onRefresh) onRefresh();
       loadData();
     } catch (err) {
       console.error('Failed to close round:', err);
-      alert('Failed to close round. Please try again.');
+      setCloseError('Failed to close round. Please try again.');
     } finally {
       setClosingRound(false);
     }
@@ -105,24 +123,16 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion
 
   // Show loading if no data, or if data is for wrong mode (prevents flashing)
   if ((loading && !data) || (loading && dataMode !== mode)) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-2 border-[#D4AF37]/30 border-t-[#D4AF37] rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-[#A9C5B4] text-sm">Loading Live Leaderboard...</p>
-        </div>
-      </div>
-    );
+    return <LoadingState label="Loading live leaderboard…" />;
   }
 
   if (!data || dataMode !== mode) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="text-center">
-          <Flag size={48} weight="duotone" className="text-[#D4AF37]/50 mx-auto mb-4" />
-          <p className="text-[#A9C5B4]">No active round found</p>
-        </div>
-      </div>
+      <EmptyState
+        icon={<Flag size={26} weight="duotone" />}
+        title="No active round"
+        message="Open a round in Admin → Rounds and mark it live to track it here."
+      />
     );
   }
 
@@ -221,161 +231,177 @@ const LiveLeaderboard = ({ currentRound, onRefresh, mode, setMode, roundsVersion
     setSelectedRoundId(roundId);
   };
 
+  const leaderTotal = players[0]?.total ?? 0;
+
   return (
-    <motion.div 
-      initial={{ opacity: 0 }} 
-      animate={{ opacity: 1 }}
-      className="max-w-5xl mx-auto"
-    >
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-auto max-w-5xl">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h2 className="text-2xl sm:text-3xl font-sans font-bold text-[#D4AF37] tracking-tight text-center sm:text-left">
-            Live Leaderboard
-          </h2>
-          <p className="text-sm text-[#A9C5B4] mt-1 text-center sm:text-left">
+      <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <div className="mb-2 flex items-center gap-2">
+            <p className="pg-eyebrow pg-eyebrow-gold">Live scoring</p>
+            {!currentRoundInfo?.is_closed && <LiveChip />}
+          </div>
+          <h2 className="pg-display pg-gold-text text-[26px] sm:text-[32px]">Live Leaderboard</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {currentRoundInfo ? (
               <>
-                <span className="text-[#D4AF37] font-semibold">Round {currentRoundInfo.round_number}</span>
-                <span className="mx-1">•</span>
-                {currentRoundInfo.courses?.name}
+                <Chip tone="gold">Round {currentRoundInfo.round_number}</Chip>
+                <Chip>{currentRoundInfo.courses?.name}</Chip>
               </>
             ) : (
-              data.display_name
+              <Chip>{data.display_name}</Chip>
             )}
-            <span className="mx-1">•</span>
-            Auto-updates every 120s
-          </p>
-        </div>
-        {isRoundFinished && !currentRoundInfo?.is_closed && (
-          <button
-            onClick={closeRound}
-            disabled={closingRound}
-            className="px-4 py-2 bg-[#D4AF37] text-[#051A10] rounded-lg font-semibold hover:bg-[#F1D67E] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-          >
-            {closingRound ? 'Closing...' : 'Close Round'}
-          </button>
-        )}
-      </div>
-
-      {/* Round Tabs */}
-      {availableRounds.length > 1 && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          {availableRounds.map(round => (
-            <button
-              key={round.id}
-              onClick={() => handleRoundChange(round.id)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                selectedRoundId === round.id
-                  ? 'bg-[#D4AF37] text-[#051A10]'
-                  : 'bg-[#051A10] text-[#A9C5B4] hover:bg-[#D4AF37]/10 hover:text-[#D4AF37]'
-              }`}
-            >
-              Round {round.round_number} - {round.courses?.name || 'Unknown Course'}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Leaderboard Table */}
-      <div className="rounded-xl border border-[#D4AF37]/20 bg-[#0F2C1D]/90 backdrop-blur-md shadow-2xl overflow-hidden">
-        {/* Table Header */}
-        <div className="bg-[#051A10] border-b border-[#D4AF37]/30 px-3 sm:px-4 py-3">
-          <div className="grid grid-cols-12 gap-1 sm:gap-2 items-center text-[10px] sm:text-xs font-semibold text-[#A9C5B4] uppercase tracking-wider">
-            <div className="col-span-2 text-center">Pos</div>
-            <div className="col-span-4 sm:col-span-3">Player</div>
-            <div className="col-span-2 text-center truncate">{mode === 'stableford' ? 'Pts' : 'Strk'}</div>
-            <div className="col-span-2 text-center">Thru</div>
-            <div className="col-span-2 sm:col-span-3 text-right hidden sm:block">Progress</div>
+            <Chip>{players.length} player{players.length === 1 ? '' : 's'}</Chip>
+            <Chip>Auto-updates every 120s</Chip>
           </div>
         </div>
 
-        {/* Table Body */}
-        <div className="divide-y divide-[#D4AF37]/10">
-          {players.map((player, idx) => (
-            <motion.div
-              key={player.name}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.03 }}
-              className="grid grid-cols-12 gap-1 sm:gap-2 items-center px-3 sm:px-4 py-3 hover:bg-[#D4AF37]/5 transition-colors"
-            >
-              {/* Position */}
-              <div className="col-span-2 text-center">
-                <span className="text-[#D4AF37] font-bold text-lg">
-                  {getPositionDisplay(player.position)}
-                </span>
-              </div>
-
-              {/* Player Name */}
-              <div className="col-span-4 sm:col-span-3">
-                <p className="text-white font-semibold truncate">{player.name}</p>
-              </div>
-
-              {/* Score */}
-              <div className="col-span-2 text-center">
-                <span className={`inline-flex items-center justify-center min-w-[3rem] px-2 py-1 rounded-lg text-lg font-bold ${
-                  mode === 'stableford' 
-                    ? 'bg-[#D4AF37]/20 text-[#D4AF37]' 
-                    : player.scoreToPar < 0 
-                      ? 'bg-emerald-500/20 text-emerald-400' 
-                      : player.scoreToPar > 0 
-                        ? 'bg-orange-500/20 text-orange-400' 
-                        : 'bg-white/10 text-white'
-                }`}>
-                  {mode === 'stableford' 
-                    ? player.total 
-                    : player.scoreToPar === 0 
-                      ? 'E' 
-                      : player.scoreToPar > 0 
-                        ? `+${player.scoreToPar}` 
-                        : player.scoreToPar}
-                </span>
-              </div>
-
-              {/* Thru */}
-              <div className="col-span-2 text-center">
-                <span className="text-[#A9C5B4] text-sm">
-                  {player.thru === 18 ? 'F' : player.thru === 0 ? '-' : player.thru}
-                </span>
-              </div>
-
-              {/* Progress Bar - hidden on mobile */}
-              <div className="col-span-2 sm:col-span-3 hidden sm:block">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-2 bg-[#051A10] rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-gradient-to-r from-[#D4AF37] to-[#F1D67E] rounded-full transition-all duration-500"
-                      style={{ width: `${(player.thru / 18) * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-[10px] text-[#A9C5B4] w-8 text-right">
-                    {Math.round((player.thru / 18) * 100)}%
-                  </span>
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
+        {isRoundFinished && !currentRoundInfo?.is_closed && (
+          <Button
+            variant="primary"
+            onClick={closeRound}
+            disabled={closingRound}
+            icon={<Lock size={15} weight="fill" />}
+            data-testid="live-close-round"
+          >
+            {closingRound ? 'Checking…' : 'Close round'}
+          </Button>
+        )}
       </div>
 
-      {/* Last Updated */}
-      <p className="text-center text-[10px] text-[#A9C5B4]/50 mt-4">
-        Last updated: {lastUpdated?.toLocaleTimeString()}
+      {closeError && (
+        <div className="mb-4">
+          <Banner tone="warning" data-testid="live-close-error">{closeError}</Banner>
+        </div>
+      )}
+
+      {/* Round picker — a real segmented control rather than loose pills */}
+      {availableRounds.length > 1 && (
+        <div className="pg-scroll -mx-1 mb-4 overflow-x-auto px-1 pb-1">
+          <Segmented
+            ariaLabel="Choose round"
+            size="sm"
+            className="w-max"
+            value={selectedRoundId}
+            onChange={handleRoundChange}
+            options={availableRounds.map(r => ({
+              value: r.id,
+              label: `R${r.round_number} · ${r.courses?.name || 'Unknown'}`,
+            }))}
+          />
+        </div>
+      )}
+
+      {/* Leaderboard */}
+      <Card className="overflow-hidden">
+        <div className="border-b border-[#D4AF37]/22 bg-[#03110A]/70 px-3 py-2.5 sm:px-4">
+          <div className="grid grid-cols-12 items-center gap-1 sm:gap-2">
+            <div className="pg-eyebrow col-span-2 text-center">Pos</div>
+            <div className="pg-eyebrow col-span-4 sm:col-span-3">Player</div>
+            <div className="pg-eyebrow col-span-2 truncate text-center">{mode === 'stableford' ? 'Pts' : 'Strk'}</div>
+            <div className="pg-eyebrow col-span-2 text-center">Thru</div>
+            <div className="pg-eyebrow col-span-2 hidden text-right sm:col-span-3 sm:block">Progress</div>
+          </div>
+        </div>
+
+        {players.length === 0 ? (
+          <div className="px-6 py-14 text-center">
+            <Target size={28} weight="duotone" className="mx-auto mb-3 text-[#D4AF37]/40" />
+            <p className="text-sm text-[#A9C5B4]">No scores logged for this round yet.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-[#D4AF37]/8">
+            {players.map((player, idx) => {
+              const isLeader = player.position === 1;
+              const behind = mode === 'stableford' ? leaderTotal - player.total : null;
+              return (
+                <motion.div
+                  key={player.name}
+                  initial={{ opacity: 0, x: -14 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: Math.min(idx, 12) * 0.025 }}
+                  className={`grid grid-cols-12 items-center gap-1 px-3 py-2.5 transition-colors hover:bg-[#D4AF37]/6 sm:gap-2 sm:px-4 ${
+                    isLeader ? 'bg-[#D4AF37]/8' : ''
+                  }`}
+                  data-testid={`live-row-${idx}`}
+                >
+                  <div className="col-span-2 text-center">
+                    <span
+                      className={`pg-num inline-flex h-7 min-w-7 items-center justify-center rounded-lg px-1.5 text-[13px] font-bold ${
+                        isLeader
+                          ? 'bg-gradient-to-b from-[#F1D67E] to-[#D4AF37] text-[#051A10]'
+                          : player.position <= 3
+                          ? 'border border-[#D4AF37]/35 bg-[#D4AF37]/12 text-[#D4AF37]'
+                          : 'text-[#A9C5B4]'
+                      }`}
+                    >
+                      {getPositionDisplay(player.position)}
+                    </span>
+                  </div>
+
+                  <div className="col-span-4 min-w-0 sm:col-span-3">
+                    <p className="truncate text-[13.5px] font-semibold text-white">{player.name}</p>
+                    {behind > 0 && (
+                      <p className="pg-num text-[10px] text-[#A9C5B4]/70">−{behind} back</p>
+                    )}
+                  </div>
+
+                  <div className="col-span-2 text-center">
+                    <span
+                      className={`pg-num inline-flex min-w-[3rem] items-center justify-center rounded-lg px-2 py-1 text-[16px] font-bold ${
+                        mode === 'stableford'
+                          ? 'bg-[#D4AF37]/16 text-[#D4AF37]'
+                          : player.scoreToPar < 0
+                          ? 'bg-emerald-500/16 text-emerald-300'
+                          : player.scoreToPar > 0
+                          ? 'bg-orange-500/16 text-orange-300'
+                          : 'bg-white/8 text-white'
+                      }`}
+                    >
+                      {mode === 'stableford'
+                        ? player.total
+                        : player.scoreToPar === 0
+                        ? 'E'
+                        : player.scoreToPar > 0
+                        ? `+${player.scoreToPar}`
+                        : player.scoreToPar}
+                    </span>
+                  </div>
+
+                  <div className="col-span-2 text-center">
+                    <span className={`pg-num text-[13px] font-semibold ${player.thru === 18 ? 'text-emerald-300' : 'text-[#A9C5B4]'}`}>
+                      {player.thru === 18 ? 'F' : player.thru === 0 ? '–' : player.thru}
+                    </span>
+                  </div>
+
+                  <div className="col-span-2 hidden sm:col-span-3 sm:block">
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#03110A]">
+                        <motion.div
+                          className="h-full rounded-full bg-gradient-to-r from-[#D4AF37] to-[#F1D67E]"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(player.thru / 18) * 100}%` }}
+                          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+                        />
+                      </div>
+                      <span className="pg-num w-8 text-right text-[10px] text-[#A9C5B4]">
+                        {Math.round((player.thru / 18) * 100)}%
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      <p className="mt-3 text-center text-[10.5px] text-[#A9C5B4]/50">
+        Last updated {lastUpdated?.toLocaleTimeString()}
       </p>
     </motion.div>
   );
 };
-
-// Small stat card component
-const StatCard = ({ icon, label, value, sub }) => (
-  <div className="rounded-lg border border-[#D4AF37]/20 bg-[#0F2C1D]/60 p-3 text-center">
-    <div className="text-[#D4AF37] mb-1 flex justify-center">{icon}</div>
-    <p className="text-xl font-bold text-white">{value}</p>
-    <p className="text-[10px] text-[#A9C5B4] uppercase tracking-wider">
-      {label}{sub && <span className="ml-1 text-[#D4AF37]">{sub}</span>}
-    </p>
-  </div>
-);
 
 export default LiveLeaderboard;
